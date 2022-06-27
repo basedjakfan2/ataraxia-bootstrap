@@ -1,0 +1,1273 @@
+#!/usr/bin/env sh
+
+set -e
+
+# replace
+linux_version="5.18.6"
+pkgconf_version="1.6.3"
+libz_version="1.2.8.2015.12.26"
+bzip_version="1.0.8"
+xz_version="5.2.5"
+lz4_version="1.9.3"
+zstd_version="1.5.2"
+libarchive_version="3.6.1"
+perl_version="5.36.0"
+texinfo_version="6.8" # GNU and GPLv3
+gettext_version="0.21" # GNU and GPLv3
+byacc_version="20220128"
+m4_version="1.4.19" # GNU and GPLv3
+autoconf_version="2.71" # GNU
+automake_version="1.16.5" # GNU
+flex_version="2.6.4"
+bc_version="5.3.3"
+gperf_version="3.1" # GNU and GPLv3
+lua_version="5.4.4"
+sqlite_version="3390000"
+libffi_version="3.4.2"
+expat_version="2.4.8"
+python_version="3.10.5"
+markupsafe_version="2.1.1"
+jinja_version="3.1.2"
+swig_version="4.0.2" # GPLv3
+libxml2_version="2.9.14"
+libxslt_version="1.1.35"
+xmlto_version="0.0.28"
+re2c_version="3.0"
+ninja_version="1.11.0"
+meson_version="0.62.2"
+gn_version="29accf5ac2eadfc53e687081583b7bc1592a8839"
+cmake_version="3.23.2"
+llvm_version="14.0.6"
+
+msg() { printf "\033[1;34m::\033[0m %s\n" "$@"; }
+warn() { printf "\033[1;33m::\033[0m %s\n" "$@"; }
+die() { printf "\033[1;31m::\033[0m %s\n" "$@"; exit 1; }
+
+download_file() {
+	if [ -z "$1" ]; then
+		die "Download URL is not specified"
+	fi
+
+	local file="${file:-$(basename $1)}"
+
+	msg "Downloading: $1 --> $file"
+
+	if ! test -d "$sources"; then
+		die "No directory with source file have been created"
+	fi
+
+	if ! type curl 2>/dev/null; then
+		die "Now download program has been found"
+	fi
+
+	cd "$sources"
+	curl \
+		--connect-timeout 60 \
+		--max-time 60 \
+		--retry 3 \
+		--retry-delay 3 \
+		--retry-max-time 60 \
+		-C - \
+		-L \
+		-o $file \
+		$1 || die "Failed to download file"
+
+	cd "$cwd"
+}
+
+unpack_file() {
+	if [ -z "$1" ]; then
+		die "Download URL is not specified"
+	fi
+
+	msg "Unpacking: $1"
+
+	if ! test -d "$sources"; then
+		die "No directory with source file have been created"
+	fi
+
+	if ! type tar 2>/dev/null; then
+		die "Now archive program has been found"
+	fi
+
+	cd "$sources"
+	tar -xf $1 || die "Failed to unpack file"
+
+	cd "$cwd"
+}
+
+update_config_sub_guess() {
+	for i in $(find . -name config.guess -o -name config.sub); do
+		[ -f "$files/common/$(basename $i)" ] && \
+			rm -f $i && cp -fv "$files"/common/$(basename $i) $i
+	done
+}
+
+epatch() {
+	if [ -z "$1" ]; then
+		die "Patch is not specified"
+	fi
+
+	local file="$(basename $1)"
+
+	msg "Applying patch: $file"
+
+	if ! test -f "$patches/$1"; then
+		die "No patch file has been found"
+	fi
+
+	if ! type patch 2>/dev/null; then
+		die "Now patch program has been found"
+	fi
+
+	patch -Np1 -i "$patches/$1"
+}
+
+emake() {
+	local opts
+
+	if ! type make 2>/dev/null; then
+		die "No make program has been found"
+	fi
+
+	if test -z "$nojobs"; then
+		opts="$makejobs"
+	fi
+
+	make $opts "$@"
+}
+
+eninja() {
+	local opts
+
+	if ! type ninja 2>/dev/null; then
+		die "Now ninja executable has been found"
+	fi
+
+	if test -z "$nojobs"; then
+		opts="$makejobs"
+	fi
+
+	ninja $opts "$@"
+}
+
+ecmake() {
+	local opts
+
+	if ! type cmake 2>/dev/null; then
+		die "Now cmake executable has been found"
+	fi
+
+	CFLAGS="$extraCflags -I$depsdir/include" \
+	CXXFLAGS="$extraCxxflags -I$depsdir/include" \
+	LDFLAGS="$extraLdflags -L$depsdir/lib" \
+	PKG_CONFIG="$tools/bin/pkgconf" \
+	PKG_CONFIG_LIBDIR="$depsdir/lib/pkgconfig" \
+	PKG_CONFIG_PATH="$depsdir/lib/pkgconfig" \
+	PKG_CONFIG_SYSROOT_DIR="$depsdir" \
+	PKG_CONFIG_SYSTEM_INCLUDE_PATH="$depsdir/include" \
+	PKG_CONFIG_SYSTEM_LIBRARY_PATH="$depsdir/lib" \
+	cmake "$@"
+}
+
+econfigure() {
+	update_config_sub_guess
+
+	CFLAGS="$extraCflags -I$depsdir/include" \
+	CXXFLAGS="$extraCxxflags -I$depsdir/include" \
+	LDFLAGS="$extraLdflags -L$depsdir/lib" \
+	PKG_CONFIG="$tools/bin/pkgconf" \
+	PKG_CONFIG_LIBDIR="$depsdir/lib/pkgconfig" \
+	PKG_CONFIG_PATH="$depsdir/lib/pkgconfig" \
+	PKG_CONFIG_SYSROOT_DIR="$depsdir" \
+	PKG_CONFIG_SYSTEM_INCLUDE_PATH="$depsdir/include" \
+	PKG_CONFIG_SYSTEM_LIBRARY_PATH="$depsdir/lib" \
+	./configure \
+		--prefix="$tools" \
+		--exec-prefix="$tools" \
+		--bindir="$tools/bin" \
+		--sbindir="$tools/bin" \
+		--sysconfdir="$tools/etc" \
+		--datadir="$tools/share" \
+		--includedir="$tools/include" \
+		--libdir="$tools/lib" \
+		--libexecdir="$tools/libexec" \
+		--localstatedir="$tools/var" \
+		--sharedstatedir="$tools/var/lib" \
+		--mandir="$tools/share/man" \
+		"$@"
+}
+
+depseconfigure() {
+	update_config_sub_guess
+
+	CFLAGS="$extraCflags -I$depsdir/include" \
+	CXXFLAGS="$extraCxxflags -I$depsdir/include" \
+	LDFLAGS="$extraLdflags -L$depsdir/lib" \
+	PKG_CONFIG="$tools/bin/pkgconf" \
+	PKG_CONFIG_LIBDIR="$depsdir/lib/pkgconfig" \
+	PKG_CONFIG_PATH="$depsdir/lib/pkgconfig" \
+	PKG_CONFIG_SYSROOT_DIR="$depsdir" \
+	PKG_CONFIG_SYSTEM_INCLUDE_PATH="$depsdir/include" \
+	PKG_CONFIG_SYSTEM_LIBRARY_PATH="$depsdir/lib" \
+	./configure \
+		--prefix="$depsdir" \
+		--exec-prefix="$depsdir" \
+		--bindir="$depsdir/bin" \
+		--sbindir="$depsdir/bin" \
+		--sysconfdir="$depsdir/etc" \
+		--datadir="$depsdir/share" \
+		--includedir="$depsdir/include" \
+		--libdir="$depsdir/lib" \
+		--libexecdir="$depsdir/libexec" \
+		--localstatedir="$depsdir/var" \
+		--sharedstatedir="$depsdir/var/lib" \
+		--mandir="$depsdir/share/man" \
+		"$@"
+}
+
+check_for_arch() {
+	if [ -z "$1" ]; then
+		die 'Architecture is not specified'
+	fi
+}
+
+parse_architecture() {
+	check_for_arch "$1"
+
+	case "$1" in
+		i386)
+			export xtarget="i386-linux-gnu"
+			export llvmTarget="X86"
+			export llvmArch="i686"
+			;;
+		x86_64)
+			export xtarget="x86_64-linux-gnu"
+			export llvmTarget="X86"
+			export llvmArch="x86_64"
+			;;
+		armv7hl)
+			export xtarget="armv7a-linux-gnueabihf"
+			export llvmTarget="ARM"
+			export llvmArch="armv7"
+			;;
+		aarch64)
+			export xtarget="aarch64-linux-gnu"
+			export llvmTarget="AArch64"
+			export llvmArch="aarch64"
+			;;
+		riscv32)
+			export xtarget="riscv32-linux-gnu"
+			export llvmTarget="RISCV"
+			export llvmArch="riscv32"
+			;;
+		riscv64)
+			export xtarget="riscv64-linux-gnu"
+			export llvmTarget="RISCV"
+			export llvmArch="riscv64"
+			;;
+		*)
+			die 'The OS architecture is not specified or supported by Ataraxia GNU/Linux'
+			;;
+	esac
+
+	export xhost="$(echo $(clang -dumpmachine) | sed -e 's/-[^-]*/-cross/')"
+}
+
+export_variables() {
+	check_for_arch "$1"
+	parse_architecture "$1"
+
+	export cwd="$(pwd)"
+	export build="${cwd}/OUT.$1"
+	export sources="${build}/sources"
+	export sysroot="${build}/sysroot"
+	export tools="${build}/tools"
+	export depsdir="${tools}/deps"
+	export patches="${cwd}/bootstrap/patches"
+	export files="${cwd}/bootstrap/files"
+
+	export LANG="C.UTF-8"
+	export LC_ALL="C.UTF-8"
+	export PATH="${tools}/bin:$PATH"
+
+	export CC="clang"
+	export CXX="clang++"
+	export AR="llvm-ar"
+	export RANLIB="llvm-ranlib"
+	export LD="ld.lld"
+	export NM="llvm-nm"
+	export STRIP="llvm-strip"
+	export OBJCOPY="llvm-objcopy"
+	export OBJDUMP="llvm-objdump"
+	export READELF="llvm-readelf"
+	export SIZE="llvm-size"
+
+	export HOSTCC="clang"
+	export HOSTCXX="clang++"
+	export HOSTLD="ld.lld"
+
+	export makejobs="-j$(expr $(nproc) + 1)"
+
+	if test "$caching" = "yes" \
+		&& ! test -z "$(command -v sccache)"; then
+		msg "Using compiler caching"
+		export CC="cached-$CC"
+		export CXX="cached-$CXX"
+		export HOSTCC="cached-$HOSTCC"
+		export HOSTCXX="cached-$HOSTCXX"
+		export RUSTC_WRAPPER="$(command -v sccache)"
+	fi
+}
+
+make_environment() {
+	rm -rf "$build"
+	mkdir -p "$sources" "$tools" "$depsdir" "$sysroot"
+
+	if test "$caching" = "yes" \
+		&& ! test -z "$(command -v sccache)"; then
+		mkdir -p "$tools"/bin
+		for i in clang clang++; do
+			install -m755 "$files"/common/cached "$tools"/bin/cached-$i
+			sed -i "s/compiler/$i/g" "$tools"/bin/cached-$i
+		done
+	fi
+}
+
+build_pkgconf() {
+	download_file https://distfiles.dereferenced.org/pkgconf/pkgconf-$pkgconf_version.tar.gz
+	unpack_file pkgconf-$pkgconf_version.tar.gz
+
+	cd "$sources/pkgconf-$pkgconf_version"
+	epatch pkgconf/0001-Only-prefix-with-the-sysroot-a-subset-of-variables.patch
+
+	econfigure \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_expat() {
+	download_file https://prdownloads.sourceforge.net/expat/expat-$expat_version.tar.xz
+	unpack_file expat-$expat_version.tar.xz
+
+	cd "$sources/expat-$expat_version"
+	depseconfigure \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_libz() {
+	download_file https://sortix.org/libz/release/libz-$libz_version.tar.gz
+	unpack_file libz-$libz_version.tar.gz
+
+	cd "$sources/libz-$libz_version"
+	depseconfigure \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_bzip2() {
+	download_file https://www.sourceware.org/pub/bzip2/bzip2-$bzip_version.tar.gz
+	unpack_file bzip2-$bzip_version.tar.gz
+
+	cd "$sources/bzip2-$bzip_version"
+	emake CC="$CC"
+	emake PREFIX="$depsdir" install
+}
+
+build_xz() {
+	download_file https://tukaani.org/xz/xz-$xz_version.tar.xz
+	unpack_file xz-$xz_version.tar.xz
+
+	cd "$sources/xz-$xz_version"
+	depseconfigure \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_lz4() {
+	download_file https://github.com/lz4/lz4/archive/v$lz4_version/lz4-$lz4_version.tar.gz
+	unpack_file lz4-$lz4_version.tar.gz
+
+	cd "$sources/lz4-$lz4_version"
+	emake -C lib CC="$CC" PREFIX="$depsdir" BUILD_SHARED=no
+	emake -C programs CC="$CC" PREFIX="$depsdir" lz4 lz4c
+	emake PREFIX="$depsdir" BUILD_SHARED=no install
+}
+
+build_zstd() {
+	download_file https://github.com/facebook/zstd/releases/download/v$zstd_version/zstd-$zstd_version.tar.gz
+	unpack_file zstd-$zstd_version.tar.gz
+
+	cd "$sources/zstd-$zstd_version"
+	epatch zstd/0001-compile-static-library-only.patch
+	emake \
+		CC="$CC" \
+		CXX="$CXX" \
+		CFLAGS="-I$depsdir/include" \
+		CXXFLAGS="-I$depsdir/include" \
+		LDFLAGS="-L$depsdir/lib" \
+		PREFIX="$depsdir" \
+		LIBDIR="$depsdir/lib"
+	emake install \
+		CC="$CC" \
+		CXX="$CXX" \
+		CFLAGS="-I$depsdir/include" \
+		CXXFLAGS="-I$depsdir/include" \
+		LDFLAGS="-L$depsdir/lib" \
+		PREFIX="$depsdir" \
+		LIBDIR="$depsdir/lib"
+}
+
+build_libarchive() {
+	download_file https://libarchive.org/downloads/libarchive-$libarchive_version.tar.gz
+	unpack_file libarchive-$libarchive_version.tar.gz
+
+	cd "$sources/libarchive-$libarchive_version"
+	depseconfigure \
+		--without-nettle \
+		--without-xml2 \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_perl() {
+	download_file https://www.cpan.org/src/5.0/perl-$perl_version.tar.xz
+	unpack_file perl-$perl_version.tar.xz
+
+	cd "$sources/perl-$perl_version"
+	BUILD_BZIP=0 \
+	BUILD_ZLIB=False \
+	./Configure -des \
+		-Dprefix="$tools" \
+		-Dvendorprefix="$tools" \
+		-Dcc="$HOSTCC" \
+		-Dccflags="-I$depsdir/include" \
+		-Dldflags="-L$depsdir/lib -lm" \
+		-Duseshrplib \
+		-Dusethreads
+	emake
+	emake install
+}
+
+build_texinfo() {
+	download_file https://ftp.gnu.org/gnu/texinfo/texinfo-$texinfo_version.tar.xz
+	unpack_file texinfo-$texinfo_version.tar.xz
+
+	cd "$sources/texinfo-$texinfo_version"
+	econfigure
+	emake
+	emake install
+}
+
+build_gettext() {
+	download_file https://ftp.gnu.org/gnu/gettext/gettext-$gettext_version.tar.xz
+	unpack_file gettext-$gettext_version.tar.xz
+
+	cd "$sources/gettext-$gettext_version"
+	econfigure \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_byacc() {
+	download_file https://invisible-island.net/archives/byacc/byacc-$byacc_version.tgz
+	unpack_file byacc-$byacc_version.tgz
+
+	cd "$sources/byacc-$byacc_version"
+	econfigure
+	emake
+	emake install
+}
+
+build_m4() {
+	download_file https://ftp.gnu.org/gnu/m4/m4-$m4_version.tar.xz
+	unpack_file m4-$m4_version.tar.xz
+
+	cd "$sources/m4-$m4_version"
+	econfigure
+	emake
+	emake install
+}
+
+build_autoconf() {
+	download_file https://ftp.gnu.org/gnu/autoconf/autoconf-$autoconf_version.tar.xz
+	unpack_file autoconf-$autoconf_version.tar.xz
+
+	cd "$sources/autoconf-$autoconf_version"
+	HELP2MAN=true \
+	econfigure
+	emake
+	emake install
+}
+
+build_automake() {
+	download_file https://ftp.gnu.org/gnu/automake/automake-$automake_version.tar.xz
+	unpack_file automake-$automake_version.tar.xz
+
+	cd "$sources/automake-$automake_version"
+	econfigure
+	emake
+	emake install
+}
+
+build_slibtoolize() {
+	mkdir -p \
+		"$tools"/share/libtoolize/AC_CONFIG_AUX_DIR \
+		"$tools"/share/libtoolize/AC_CONFIG_MACRO_DIRS \
+		"$tools"/share/aclocal/
+
+	for macros in ltversion.m4 libtool.m4 ltargz.m4 ltdl.m4 ltoptions.m4 ltsugar.m4 lt~obsolete.m4; do
+		install -Dm644 "$files"/slibtool/$macros "$tools"/share/aclocal/$macros
+		install -Dm644 "$files"/slibtool/$macros "$tools"/share/libtoolize/AC_CONFIG_MACRO_DIRS/$macros
+	done
+
+	for aux in compile depcomp install-sh missing; do
+		install -Dm755 "$files"/slibtool/$aux "$tools"/share/libtoolize/AC_CONFIG_AUX_DIR/$aux
+	done
+	install -Dm755 "$files"/slibtool/ltmain.sh "$tools"/share/libtoolize/AC_CONFIG_AUX_DIR/ltmain.sh
+
+	install -Dm755 "$files"/common/config.sub "$tools"/share/libtoolize/AC_CONFIG_AUX_DIR/config.sub
+	install -Dm755 "$files"/common/config.guess "$tools"/share/libtoolize/AC_CONFIG_AUX_DIR/config.guess
+
+	install -Dm755 "$files"/slibtool/libtoolize "$tools"/bin/libtoolize
+	sed -i "s,uncom_sysroot,$tools,g" "$tools"/bin/libtoolize
+}
+
+build_flex() {
+	download_file https://github.com/westes/flex/releases/download/v$flex_version/flex-$flex_version.tar.gz
+	unpack_file flex-$flex_version.tar.gz
+
+	cd "$sources/flex-$flex_version"
+	epatch flex/flex-rh1389575.patch
+
+	autoreconf -i
+	HELP2MAN=true \
+	econfigure \
+		--disable-shared
+
+	touch doc/flex.1
+
+	emake
+	emake install
+
+	(
+		cd "$tools/bin"
+		ln -sf flex lex
+		ln -sf flex flex++
+	)
+}
+
+build_bc() {
+	download_file https://github.com/gavinhoward/bc/releases/download/$bc_version/bc-$bc_version.tar.xz
+	unpack_file bc-$bc_version.tar.xz
+
+	cd "$sources/bc-$bc_version"
+	CC="clang" \
+	HOSTCC="clang" \
+	./configure \
+		--prefix="$tools" \
+		--disable-nls
+	emake
+	emake install
+}
+
+build_gperf() {
+	download_file https://ftp.gnu.org/gnu/gperf/gperf-$gperf_version.tar.gz
+	unpack_file gperf-$gperf_version.tar.gz
+
+	cd "$sources/gperf-$gperf_version"
+	econfigure
+	emake
+	emake install
+}
+
+build_lua() {
+	download_file https://www.lua.org/ftp/lua-$lua_version.tar.gz
+	unpack_file lua-$lua_version.tar.gz
+
+	cd "$sources/lua-$lua_version"
+	emake \
+		CC="$CC" \
+		CFLAGS="-I$depsdir/include" \
+		LDFLAGS="-L$depsdir/lib"
+	emake install \
+		CC="$CC" \
+		CFLAGS="-I$depsdir/include" \
+		LDFLAGS="-L$depsdir/lib" \
+		INSTALL_TOP="$depsdir" \
+		INSTALL_MAN="$depsdir"/share/man/man1
+
+	cat > "$depsdir/lib/pkgconfig/lua.pc" <<-EOF
+		V=${lua_version%.*}
+		R=$lua_version
+
+		prefix=$depsdir
+		INSTALL_BIN=$depsdir/bin
+		INSTALL_INC=$depsdir/include
+		INSTALL_LIB=$depsdir/lib
+		INSTALL_MAN=$depsdir/man/man1
+		INSTALL_LMOD=$depsdir/share/lua/${V}
+		INSTALL_CMOD=$depsdir/lib/lua/${V}
+		exec_prefix=$depsdir
+		libdir=$depsdir/lib
+		includedir=$depsdir/include
+
+		Name: Lua
+		Description: An Extensible Extension Language
+		Version: ${R}
+		Requires: 
+		Libs: -L$depsdir/lib -llua -lm
+		Cflags: -I$depsdir/include
+	EOF
+}
+
+build_sqlite() {
+	download_file https://www.sqlite.org/2022/sqlite-autoconf-$sqlite_version.tar.gz
+	unpack_file sqlite-autoconf-$sqlite_version.tar.gz
+
+	cd "$sources/sqlite-autoconf-$sqlite_version"
+	extraCflags=" \
+		-DSQLITE_ENABLE_COLUMN_METADATA=1 \
+		-DSQLITE_DISABLE_DIRSYNC=1 \
+		-DSQLITE_SECURE_DELETE=1 \
+		-DSQLITE_ENABLE_UNLOCK_NOTIFY=1 \
+		-DSQLITE_ENABLE_DBSTAT_VTAB=1 \
+		-DSQLITE_ENABLE_FTS3_PARENTHESIS=1 \
+		-DSQLITE_ENABLE_DBPAGE_VTAB \
+		-Wall -fno-strict-aliasing" \
+	depseconfigure \
+		--enable-fts3 \
+		--enable-fts4 \
+		--enable-fts5 \
+		--enable-rtree \
+		--enable-threadsafe \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_libffi() {
+	download_file https://github.com/libffi/libffi/releases/download/v$libffi_version/libffi-$libffi_version.tar.gz
+	unpack_file libffi-$libffi_version.tar.gz
+
+	cd "$sources/libffi-$libffi_version"
+	depseconfigure \
+		--disable-multi-os-directory \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_python() {
+	download_file https://www.python.org/ftp/python/$python_version/Python-$python_version.tar.xz
+	unpack_file Python-$python_version.tar.xz
+
+	cd "$sources/Python-$python_version"
+	epatch python/0001-Adjust-library-header-paths-for-cross-compilation.patch
+	epatch python/0002-Do-not-adjust-the-shebang-of-Python-scripts-for-cros.patch
+	econfigure \
+		--with-system-expat \
+		--enable-ipv6 \
+		--enable-loadable-sqlite-extensions \
+		--enable-shared
+	emake
+	emake install
+
+	ln -sf python3 "$tools"/bin/python
+	ln -sf python3-config "$tools"/bin/python-config
+	ln -sf idle3 "$tools"/bin/idle
+	ln -sf pydoc3 "$tools"/bin/pydoc
+}
+
+build_python_markupsafe() {
+	download_file https://files.pythonhosted.org/packages/source/M/MarkupSafe/MarkupSafe-$markupsafe_version.tar.gz
+	unpack_file MarkupSafe-$markupsafe_version.tar.gz
+
+	cd "$sources/MarkupSafe-$markupsafe_version"
+	python setup.py build
+	python setup.py install --optimize=1 --skip-build
+}
+
+build_python_jinja2() {
+	download_file https://files.pythonhosted.org/packages/source/J/Jinja2/Jinja2-$jinja_version.tar.gz
+	unpack_file Jinja2-3.1.2.tar.gz
+
+	cd "$sources/Jinja2-$jinja_version"
+	python setup.py build
+	python setup.py install --optimize=1 --skip-build
+}
+
+build_swig() {
+	download_file https://downloads.sourceforge.net/swig/swig-$swig_version.tar.gz
+	unpack_file swig-$swig_version.tar.gz
+
+	cd "$sources/swig-$swig_version"
+	econfigure \
+		--without-pcre \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_libxml2() {
+	download_file https://download.gnome.org/sources/libxml2/${libxml2_version%.*}/libxml2-$libxml2_version.tar.xz
+	unpack_file libxml2-$libxml2_version.tar.xz
+
+	cd "$sources/libxml2-$libxml2_version"
+	epatch libxml2/0001-Fix-python-UTF-8-error.patch
+	epatch libxml2/0002-use-customizable-path-to-etc-xml-catalog.patch
+
+	sed -e "s|sysconfdir|$tools/etc|" -i \
+		catalog.c \
+		xmllint.c
+
+	econfigure \
+		--with-python=python3 \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_libxslt() {
+	download_file https://download.gnome.org/sources/libxslt/${libxslt_version%.*}/libxslt-$libxslt_version.tar.xz
+	unpack_file libxslt-$libxslt_version.tar.xz
+
+	cd "$sources/libxslt-$libxslt_version"
+	econfigure \
+		--disable-shared
+	emake
+	emake install
+}
+
+build_docbook_xml() {
+	download_file http://snapshot.debian.org/archive/debian/20160728T043443Z/pool/main/d/docbook-xml/docbook-xml_4.5.orig.tar.gz
+	unpack_file docbook-xml_4.5.orig.tar.gz
+
+	cd "$sources/docbook-xml-4.5.c31424"
+	for i in 4.5 4.4 4.3 4.2 4.1.2 4.0; do
+		cd "$sources/docbook-xml-4.5.c31424/docbook-$i"
+
+		install -d -m755 "$tools"/share/xml/docbook/xml-dtd-$i
+		cp -avp * "$tools"/share/xml/docbook/xml-dtd-$i/
+	done
+
+	install -d "$tools"/etc/xml
+	xmlcatalog --noout --create "$tools"/etc/xml/docbook-xml
+
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook XML V4.5//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.5/docbookx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook XML CALS Table Model V4.5//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.5/calstblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD XML Exchange Table Model 19990315//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.5/soextblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook XML Information Pool V4.5//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.5/dbpoolx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook XML Document Hierarchy V4.5//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.5/dbhierx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook XML HTML Tables V4.5//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.5/htmltblx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook XML Notations V4.5//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.5/dbnotnx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook XML Character Entities V4.5//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.5/dbcentx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook XML Additional General Entities V4.5//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.5/dbgenent.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteSystem" \
+		"http://www.oasis-open.org/docbook/xml/4.5" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.5" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteURI" \
+		"http://www.oasis-open.org/docbook/xml/4.5" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.5" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook XML V4.4//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.4/docbookx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook CALS Table Model V4.4//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.4/calstblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook XML HTML Tables V4.4//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.4/htmltblx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD XML Exchange Table Model 19990315//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.4/soextblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook Information Pool V4.4//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.4/dbpoolx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook Document Hierarchy V4.4//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.4/dbhierx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook Additional General Entities V4.4//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.4/dbgenent.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook Notations V4.4//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.4/dbnotnx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook Character Entities V4.4//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.4/dbcentx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteSystem" \
+		"http://www.oasis-open.org/docbook/xml/4.4" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.4" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteURI" \
+		"http://www.oasis-open.org/docbook/xml/4.4" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.4" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook XML V4.3//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.3/docbookx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook CALS Table Model V4.3//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.3/calstblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD XML Exchange Table Model 19990315//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.3/soextblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook Information Pool V4.3//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.3/dbpoolx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook Document Hierarchy V4.3//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.3/dbhierx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook Additional General Entities V4.3//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.3/dbgenent.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook Notations V4.3//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.3/dbnotnx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook Character Entities V4.3//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.3/dbcentx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteSystem" \
+		"http://www.oasis-open.org/docbook/xml/4.3" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.3" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteURI" \
+		"http://www.oasis-open.org/docbook/xml/4.3" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.3" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS/DTD DocBook XML V4.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS/DTD DocBook CALS Table Model V4.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.2/calstblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS/DTD XML Exchange Table Model 19990315//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.2/soextblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS/ELEMENTS DocBook Information Pool V4.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.2/dbpoolx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS/ELEMENTS DocBook Document Hierarchy V4.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.2/dbhierx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS/ENTITIES DocBook Additional General Entities V4.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.2/dbgenent.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS/ENTITIES DocBook Notations V4.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.2/dbnotnx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS/ENTITIES DocBook Character Entities V4.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.2/dbcentx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteSystem" \
+		"http://www.oasis-open.org/docbook/xml/4.2" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.2" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteURI" \
+		"http://www.oasis-open.org/docbook/xml/4.2" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.2" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook XML V4.1.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2/docbookx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook XML CALS Table Model V4.1.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2/calstblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD XML Exchange Table Model 19990315//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2/soextblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook XML Information Pool V4.1.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2/dbpoolx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook XML Document Hierarchy V4.1.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2/dbhierx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook XML Additional General Entities V4.1.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2/dbgenent.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook XML Notations V4.1.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2/dbnotnx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook XML Character Entities V4.1.2//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2/dbcentx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteSystem" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.1.2" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteURI" \
+		"http://www.oasis-open.org/docbook/xml/4.1.2" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.1.2" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook XML V4.0//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.0/docbookx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD DocBook XML CALS Table Model V4.0//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.0/calstblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//DTD XML Exchange Table Model 19990315//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.0/soextblx.dtd" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook XML Information Pool V4.0//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.0/dbpoolx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ELEMENTS DocBook XML Document Hierarchy V4.0//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.0/dbhierx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook XML Additional General Entities V4.0//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.0/dbgenent.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook XML Notations V4.0//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.0/dbnotnx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "public" \
+		"-//OASIS//ENTITIES DocBook XML Character Entities V4.0//EN" \
+		"http://www.oasis-open.org/docbook/xml/4.0/dbcentx.mod" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteSystem" \
+		"http://www.oasis-open.org/docbook/xml/4.0" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.0" \
+		"$tools"/etc/xml/docbook-xml
+	xmlcatalog --noout --add "rewriteURI" \
+		"http://www.oasis-open.org/docbook/xml/4.0" \
+		"file://$tools/share/xml/docbook/xml-dtd-4.0" \
+		"$tools"/etc/xml/docbook-xml
+
+	xmlcatalog --noout --create "$tools"/etc/xml/catalog
+
+	xmlcatalog --noout --add "delegatePublic" \
+		"-//OASIS//ENTITIES DocBook XML" \
+		"file://$tools/etc/xml/docbook-xml" \
+		"$tools"/etc/xml/catalog
+	xmlcatalog --noout --add "delegatePublic" \
+		"-//OASIS//DTD DocBook XML" \
+		"file://$tools/etc/xml/docbook-xml" \
+		"$tools"/etc/xml/catalog
+	xmlcatalog --noout --add "delegateSystem" \
+		"http://www.oasis-open.org/docbook/" \
+		"file://$tools/etc/xml/docbook-xml" \
+		"$tools"/etc/xml/catalog
+	xmlcatalog --noout --add "delegateURI" \
+		"http://www.oasis-open.org/docbook/" \
+		"file://$tools/etc/xml/docbook-xml" \
+		"$tools"/etc/xml/catalog
+}
+
+build_docbook_xsl() {
+	download_file https://github.com/docbook/xslt10-stylesheets/releases/download/release/1.79.2/docbook-xsl-1.79.2.tar.gz
+	unpack_file docbook-xsl-1.79.2.tar.gz
+
+	cd "$sources/docbook-xsl-1.79.2"
+	install -m755 -d "$tools"/share/xml/docbook/xsl-stylesheets-1.79.2
+
+	cp -R \
+		VERSION common eclipse epub extensions fo \
+		highlighting html htmlhelp images javahelp lib manpages \
+		params profiling roundtrip slides template tests tools website \
+		xhtml xhtml-1_1 \
+		"$tools"/share/xml/docbook/xsl-stylesheets-1.79.2
+
+	ln -sf VERSION "$tools"/share/xml/docbook/xsl-stylesheets-1.79.2/VERSION.xsl
+	ln -sf xsl-stylesheets-1.79.2 "$tools"/share/xml/docbook/xsl-stylesheets
+
+	xmlcatalog --noout --add "rewriteSystem" \
+		"http://docbook.sourceforge.net/release/xsl/1.79.2" \
+		"$tools/share/xml/docbook/xsl-stylesheets-1.79.2" \
+		"$tools"/etc/xml/catalog
+	xmlcatalog --noout --add "rewriteURI" \
+		"http://docbook.sourceforge.net/release/xsl/1.79.2" \
+		"$tools/share/xml/docbook/xsl-stylesheets-1.79.2" \
+		"$tools"/etc/xml/catalog
+	xmlcatalog --noout --add "rewriteSystem" \
+		"http://docbook.sourceforge.net/release/xsl/current" \
+		"$tools/share/xml/docbook/xsl-stylesheets-1.79.2" \
+		"$tools"/etc/xml/catalog
+	xmlcatalog --noout --add "rewriteURI" \
+		"http://docbook.sourceforge.net/release/xsl/current" \
+		"$tools/share/xml/docbook/xsl-stylesheets-1.79.2" \
+		"$tools"/etc/xml/catalog
+}
+
+build_xmlto() {
+	download_file https://releases.pagure.org/xmlto/xmlto-$xmlto_version.tar.bz2
+	unpack_file xmlto-$xmlto_version.tar.bz2
+
+	cd "$sources/xmlto-$xmlto_version"
+	econfigure
+	emake
+	emake install
+}
+
+build_ninja() {
+	download_file https://github.com/ninja-build/ninja/archive/v$ninja_version/ninja-$ninja_version.tar.gz
+	unpack_file ninja-$ninja_version.tar.gz
+
+	cd "$sources/ninja-1.11.0"
+	python configure.py --bootstrap
+	install -m755 ninja "$tools"/bin/ninja
+}
+
+build_gn() {
+	download_file https://gn.googlesource.com/gn/+archive/$gn_version.tar.gz
+
+	cd "$sources"
+	mkdir gn
+	tar -C gn -xf $gn_version.tar.gz
+
+	cd gn
+	python build/gen.py --no-last-commit-position
+
+	cat > out/last_commit_position.h <<-EOF
+		#ifndef OUT_LAST_COMMIT_POSITION_H_
+		#define OUT_LAST_COMMIT_POSITION_H_
+		#define LAST_COMMIT_POSITION_NUM 2047
+		#define LAST_COMMIT_POSITION "2047 (29accf5a)"	
+		#endif
+	EOF
+
+	eninja -C out
+
+	install -m755 out/gn "$tools"/bin/gn
+}
+
+build_meson() {
+	download_file https://github.com/mesonbuild/meson/releases/download/$meson_version/meson-$meson_version.tar.gz
+	unpack_file meson-$meson_version.tar.gz
+
+	cd "$sources/meson-$meson_version"
+	python setup.py build
+	python setup.py install --optimize=1 --skip-build
+}
+
+build_cmake() {
+	download_file https://cmake.org/files/v${cmake_version%.*}/cmake-$cmake_version.tar.gz
+	unpack_file cmake-$cmake_version.tar.gz
+
+	cd "$sources/cmake-$cmake_version"
+	sed -i '/"lib64"/s/64//' Modules/GNUInstallDirs.cmake
+
+	./bootstrap \
+		--prefix="$tools" \
+		--mandir=/share/man \
+		--docdir=/share/doc/cmake \
+		--parallel="$(echo $makejobs | sed -e 's/-j//g')"
+	emake
+	emake install
+}
+
+build_llvm() {
+	download_file https://github.com/llvm/llvm-project/releases/download/llvmorg-$llvm_version/llvm-project-$llvm_version.src.tar.xz
+	unpack_file llvm-project-$llvm_version.src.tar.xz
+
+	cd "$sources/llvm-project-$llvm_version.src/clang"
+	epatch clang/0001-add-support-for-Ataraxia-GNU-Linux.patch
+	epatch clang/0002-disable-relaxation-on-RISC-V.patch
+	epatch clang/0003-use-rv-imac-abi-for-RISC-V-by-default.patch
+
+	cd "$sources/llvm-project-$llvm_version.src/lld"
+	epatch lld/0001-use-SHA1-by-default.patch
+
+	cd "$sources/llvm-project-$llvm_version.src"
+	ecmake -S llvm -B llvm-build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX="$tools" \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DENABLE_LINKER_BUILD_ID=ON \
+		-DCLANG_DEFAULT_CXX_STDLIB=libc++ \
+		-DCLANG_DEFAULT_LINKER=lld \
+		-DCLANG_DEFAULT_OPENMP_RUNTIME=libomp \
+		-DCLANG_DEFAULT_RTLIB=compiler-rt \
+		-DCLANG_DEFAULT_UNWINDLIB=libunwind \
+		-DCLANG_PLUGIN_SUPPORT=ON \
+		-DCLANG_VENDOR=Ataraxia \
+		-DGO_EXECUTABLE=GO_EXECUTABLE-NOTFOUND \
+		-DLLVM_BUILD_LLVM_DYLIB=ON \
+		-DLLVM_LINK_LLVM_DYLIB=ON \
+		-DLLVM_ENABLE_LIBEDIT=OFF \
+		-DLLVM_ENABLE_PROJECTS="clang;lld" \
+		-DLLVM_ENABLE_DOXYGEN=OFF \
+		-DLLVM_ENABLE_LIBPFM=OFF \
+		-DLLVM_ENABLE_LIBXML2=OFF \
+		-DLLVM_ENABLE_OCAMLDOC=OFF \
+		-DLLVM_ENABLE_RTTI=ON \
+		-DLLVM_ENABLE_SPHINX=OFF \
+		-DLLVM_ENABLE_TERMINFO=OFF \
+		-DLLVM_INCLUDE_BENCHMARKS=OFF \
+		-DLLVM_INCLUDE_DOCS=OFF \
+		-DLLVM_INCLUDE_EXAMPLES=OFF \
+		-DLLVM_INCLUDE_TESTS=OFF \
+		-DLLVM_DEFAULT_TARGET_TRIPLE="$xtarget" \
+		-DLLVM_TARGET_ARCH="$llvmArch" \
+		-DLLVM_TARGETS_TO_BUILD="$llvmTarget" \
+		-DDEFAULT_SYSROOT="$sysroot" \
+		-DOCAMLFIND=NO \
+		-Wno-dev
+	eninja -C llvm-build
+	eninja -C llvm-build install
+
+	local clangbin="$(readlink $tools/bin/clang)"
+
+	cd "$tools/bin"
+	for i in cc c++ clang clang++ cpp; do
+		cp $clangbin $xtarget-$i
+	done
+
+	for i in ar dwp nm objcopy objdump size strings; do
+		cp llvm-$i $xtarget-$i
+	done
+
+	cp lld $xtarget-ld
+	cp lld $xtarget-ld.lld
+	cp llvm-symbolizer $xtarget-addr2line
+	cp llvm-cxxfilt $xtarget-c++filt
+	cp llvm-cov $xtarget-gcov
+	cp llvm-ar $xtarget-ranlib
+	cp llvm-readobj $xtarget-readelf
+	cp llvm-objcopy $xtarget-strip
+
+	rm -f \
+		$clangbin \
+		clang clang++ \
+		clang-cl clang-cpp \
+		lld-link ld.lld ld64.lld \
+		ld64.lld.darwinnew wasm-ld \
+		lld
+
+}
+
+main() {
+	export caching="no"
+
+	while getopts "ca:" arg; do
+		case $arg in
+			c) export caching="yes" ;;
+			a) export barch="$OPTARG" ;;
+		esac
+	done
+
+	parse_architecture $barch
+	msg "Configuring build environment for $barch"
+
+	export_variables $barch
+	make_environment
+
+	msg "Started toolchain build."
+	build_pkgconf
+	build_expat
+	build_libz
+	build_bzip2
+	build_xz
+	build_lz4
+	build_zstd
+	build_libarchive
+	build_perl
+	build_texinfo
+	build_gettext
+	build_byacc
+	build_m4
+	build_autoconf
+	build_automake
+	build_slibtoolize
+	build_flex
+	build_bc
+	build_gperf
+	build_lua
+	build_sqlite
+	build_libffi
+	build_python
+	build_python_markupsafe
+	build_python_jinja2
+	build_swig
+	build_libxml2
+	build_libxslt
+	build_docbook_xml
+	build_docbook_xsl
+	build_ninja
+	build_gn
+	build_meson
+	build_cmake
+	build_llvm
+
+	msg "Toolchain build done."
+}
+
+main "$@"
+
+exit 0
+

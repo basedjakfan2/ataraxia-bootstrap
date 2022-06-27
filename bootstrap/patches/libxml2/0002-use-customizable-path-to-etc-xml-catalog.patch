@@ -1,0 +1,44 @@
+From bf362acc66d5fc1372ab0e43115186fb0ee538d1 Mon Sep 17 00:00:00 2001
+From: Taylor Berlioz <nagakamira@gmail.com>
+Date: Sun, 26 Jun 2022 13:54:03 -0700
+Subject: [PATCH 2/2] use customizable path to /etc/xml/catalog
+
+Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
+---
+ catalog.c | 4 ++--
+ xmllint.c | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/catalog.c b/catalog.c
+index e071b49..c922111 100644
+--- a/catalog.c
++++ b/catalog.c
+@@ -70,10 +70,10 @@
+ #define XML_URN_PUBID "urn:publicid:"
+ #define XML_CATAL_BREAK ((xmlChar *) -1)
+ #ifndef XML_XML_DEFAULT_CATALOG
+-#define XML_XML_DEFAULT_CATALOG "file:///etc/xml/catalog"
++#define XML_XML_DEFAULT_CATALOG "file://sysconfdir/xml/catalog"
+ #endif
+ #ifndef XML_SGML_DEFAULT_CATALOG
+-#define XML_SGML_DEFAULT_CATALOG "file:///etc/sgml/catalog"
++#define XML_SGML_DEFAULT_CATALOG "file://sysconfdir/sgml/catalog"
+ #endif
+ 
+ #if defined(_WIN32) && defined(_MSC_VER)
+diff --git a/xmllint.c b/xmllint.c
+index ee6bfdc..4dc6a4e 100644
+--- a/xmllint.c
++++ b/xmllint.c
+@@ -87,7 +87,7 @@
+ #endif
+ 
+ #ifndef XML_XML_DEFAULT_CATALOG
+-#define XML_XML_DEFAULT_CATALOG "file:///etc/xml/catalog"
++#define XML_XML_DEFAULT_CATALOG "file://sysconfdir/xml/catalog"
+ #endif
+ 
+ typedef enum {
+-- 
+2.34.1
+

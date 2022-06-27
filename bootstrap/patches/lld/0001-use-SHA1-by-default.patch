@@ -1,0 +1,26 @@
+From 24c444e466e9dfd9e4acfcdaaae944614fdda8c1 Mon Sep 17 00:00:00 2001
+From: Taylor Berlioz <nagakamira@gmail.com>
+Date: Sun, 26 Jun 2022 14:41:52 -0700
+Subject: [PATCH] use SHA1 by default
+
+Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
+---
+ ELF/Driver.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ELF/Driver.cpp b/ELF/Driver.cpp
+index 54b487b..179c18c 100644
+--- a/ELF/Driver.cpp
++++ b/ELF/Driver.cpp
+@@ -757,7 +757,7 @@ getBuildId(opt::InputArgList &args) {
+     return {BuildIdKind::None, {}};
+ 
+   if (arg->getOption().getID() == OPT_build_id)
+-    return {BuildIdKind::Fast, {}};
++    return {BuildIdKind::Sha1, {}};
+ 
+   StringRef s = arg->getValue();
+   if (s == "fast")
+-- 
+2.34.1
+

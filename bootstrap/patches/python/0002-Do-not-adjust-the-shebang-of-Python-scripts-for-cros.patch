@@ -1,0 +1,29 @@
+From b556672e878d550c70a673afe94a05a3fc0ef296 Mon Sep 17 00:00:00 2001
+From: Taylor Berlioz <nagakamira@gmail.com>
+Date: Fri, 24 Jun 2022 09:50:15 -0700
+Subject: [PATCH 2/2] Do not adjust the shebang of Python scripts for
+ cross-compilation
+
+Based off Buildroot's patch
+
+Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
+---
+ Lib/distutils/command/build_scripts.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Lib/distutils/command/build_scripts.py b/Lib/distutils/command/build_scripts.py
+index ccc70e6..88620a0 100644
+--- a/Lib/distutils/command/build_scripts.py
++++ b/Lib/distutils/command/build_scripts.py
+@@ -91,7 +91,7 @@ class build_scripts(Command):
+                     adjust = True
+                     post_interp = match.group(1) or b''
+ 
+-            if adjust:
++            if adjust and not 'OS_SYSROOT' in os.environ:
+                 log.info("copying and adjusting %s -> %s", script,
+                          self.build_dir)
+                 updated_files.append(outfile)
+-- 
+2.34.1
+

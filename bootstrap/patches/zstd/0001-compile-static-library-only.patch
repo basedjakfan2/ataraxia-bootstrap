@@ -1,0 +1,44 @@
+From 71caf893ed8a563f44a43b27b1b87368d8d63e36 Mon Sep 17 00:00:00 2001
+From: Taylor Berlioz <nagakamira@gmail.com>
+Date: Fri, 24 Jun 2022 03:21:14 -0700
+Subject: [PATCH] compile static library only
+
+Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
+---
+ lib/Makefile | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/lib/Makefile b/lib/Makefile
+index ef20218..fe3f0c6 100644
+--- a/lib/Makefile
++++ b/lib/Makefile
+@@ -165,7 +165,7 @@ $(ZSTD_DYNLIB): $(ZSTD_DYNLIB_OBJ)
+ 	ln -sf $@ libzstd.$(SHARED_EXT_MAJOR)
+ 	ln -sf $@ libzstd.$(SHARED_EXT)
+ 
+-$(LIBZSTD): $(ZSTD_DYNLIB)
++$(LIBZSTD): $(ZSTD_STATLIB)
+ 	cp -f $< $@
+ 
+ endif  # ifndef BUILD_DIR
+@@ -308,7 +308,7 @@ libzstd.pc: libzstd.pc.in
+ 	        $< >$@
+ 
+ .PHONY: install
+-install: install-pc install-static install-shared install-includes
++install: install-pc install-static install-includes
+ 	@echo zstd static and shared library installed
+ 
+ .PHONY: install-pc
+@@ -345,8 +345,6 @@ install-includes:
+ .PHONY: uninstall
+ uninstall:
+ 	$(RM) $(DESTDIR)$(LIBDIR)/libzstd.a
+-	$(RM) $(DESTDIR)$(LIBDIR)/libzstd.$(SHARED_EXT)
+-	$(RM) $(DESTDIR)$(LIBDIR)/libzstd.$(SHARED_EXT_MAJOR)
+ 	$(RM) $(DESTDIR)$(LIBDIR)/$(LIBZSTD)
+ 	$(RM) $(DESTDIR)$(PKGCONFIGDIR)/libzstd.pc
+ 	$(RM) $(DESTDIR)$(INCLUDEDIR)/zstd.h
+-- 
+2.34.1
+
