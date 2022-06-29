@@ -240,30 +240,15 @@ parse_architecture() {
 	check_for_arch "$1"
 
 	case "$1" in
-		i386)
-			export xtarget="i386-linux-gnu"
-			export llvmTarget="X86"
-			export llvmArch="i686"
-			;;
 		x86_64)
 			export xtarget="x86_64-linux-gnu"
 			export llvmTarget="X86"
 			export llvmArch="x86_64"
 			;;
-		armv7hl)
-			export xtarget="armv7a-linux-gnueabihf"
-			export llvmTarget="ARM"
-			export llvmArch="armv7"
-			;;
 		aarch64)
 			export xtarget="aarch64-linux-gnu"
 			export llvmTarget="AArch64"
 			export llvmArch="aarch64"
-			;;
-		riscv32)
-			export xtarget="riscv32-linux-gnu"
-			export llvmTarget="RISCV"
-			export llvmArch="riscv32"
 			;;
 		riscv64)
 			export xtarget="riscv64-linux-gnu"
