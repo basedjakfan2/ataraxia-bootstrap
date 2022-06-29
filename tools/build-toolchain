@@ -245,7 +245,7 @@ parse_architecture() {
 			export llvmTarget="X86"
 			export llvmArch="x86_64"
 			;;
-		aarch64)
+		arm64)
 			export xtarget="aarch64-linux-gnu"
 			export llvmTarget="AArch64"
 			export llvmArch="aarch64"
