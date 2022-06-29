@@ -50,6 +50,10 @@ download_file() {
 
 	local file="${file:-$(basename $1)}"
 
+	if test -f "$sources/$file"; then
+		return 0
+	fi
+
 	msg "Downloading: $1 --> $file"
 
 	if ! test -d "$sources"; then
@@ -99,7 +103,7 @@ unpack_file() {
 update_config_sub_guess() {
 	for i in $(find . -name config.guess -o -name config.sub); do
 		[ -f "$files/common/$(basename $i)" ] && \
-			rm -f $i && cp -fv "$files"/common/$(basename $i) $i
+			rm -f $i && cp -f "$files"/common/$(basename $i) $i
 	done
 }
 
@@ -629,7 +633,7 @@ build_lua() {
 }
 
 build_sqlite() {
-	download_file https://www.sqlite.org/2022/sqlite-autoconf-$sqlite_version.tar.gz
+	download_file https://sqlite.org/2022/sqlite-autoconf-$sqlite_version.tar.gz
 	unpack_file sqlite-autoconf-$sqlite_version.tar.gz
 
 	cd "$sources/sqlite-autoconf-$sqlite_version"
