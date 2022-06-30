@@ -246,18 +246,33 @@ parse_architecture() {
 			export llvmTarget="X86"
 			export llvmArch="x86_64"
 			export kArch="x86"
+			export baseCflags="-march=x86-64-v2 -O2 -g0 -fomit-frame-pointer -pipe"
+			export securityCflags="-D_FORTIFY_SOURCE=2 -fsanitize=safe-stack -fsanitize-cfi-cross-dso -fstack-protector-strong -fstack-clash-protection -fcf-protection=full -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -mretpoline --param=ssp-buffer-size=4"
+			export targetCflags="$baseCflags $securityCflags"
+			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
+			export libSuffix="lib64"
 			;;
 		arm64)
 			export xtarget="aarch64-linux-gnu"
 			export llvmTarget="AArch64"
 			export llvmArch="aarch64"
 			export kArch="arm64"
+			export baseCflags="-march=armv8.2a -mtune=neoverse-n1 -mcpu=neoverse-n1 -O2 -g0 -fomit-frame-pointer -pipe"
+			export securityCflags="-D_FORTIFY_SOURCE=2 -ffixed-x18 -fsanitize=safe-stack -fsanitize=shadow-call-stack -fsanitize-cfi-cross-dso -fstack-protector-strong -fstack-clash-protection -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang --param=ssp-buffer-size=4"
+			export targetCflags="$baseCflags $securityCflags"
+			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
+			export libSuffix="lib64"
 			;;
 		riscv64)
 			export xtarget="riscv64-linux-gnu"
 			export llvmTarget="RISCV"
 			export llvmArch="riscv64"
 			export kArch="riscv"
+			export baseCflags="-O2 -g0 -fomit-frame-pointer -pipe"
+			export securityCflags="-D_FORTIFY_SOURCE=2 -fstack-protector-strong -fstack-clash-protection -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang --param=ssp-buffer-size=4"
+			export targetCflags="$baseCflags $securityCflags"
+			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
+			export libSuffix="lib64"
 			;;
 		*)
 			die 'The OS architecture is not specified or supported by Ataraxia GNU/Linux'
@@ -300,6 +315,9 @@ export_variables() {
 	export HOSTCXX="clang++"
 	export HOSTLD="ld.lld"
 
+	export TARGET_CC="$xtarget-clang"
+	export TARGET_CXX="$xtarget-clang++"
+
 	export makejobs="-j$(expr $(nproc) + 1)"
 
 	if test "$caching" = "yes" \
@@ -309,6 +327,8 @@ export_variables() {
 		export CXX="cached-$CXX"
 		export HOSTCC="cached-$HOSTCC"
 		export HOSTCXX="cached-$HOSTCXX"
+		export TARGET_CC="cached-$xtarget-clang"
+		export TARGET_CXX="cached-$xtarget-clang++"
 		export RUSTC_WRAPPER="$(command -v sccache)"
 	fi
 }
@@ -320,7 +340,7 @@ make_environment() {
 	if test "$caching" = "yes" \
 		&& ! test -z "$(command -v sccache)"; then
 		mkdir -p "$tools"/bin
-		for i in clang clang++; do
+		for i in clang clang++ $xtarget-clang $xtarget-clang++ $xtarget-cc $xtarget-c++; do
 			install -m755 "$files"/common/cached "$tools"/bin/cached-$i
 			sed -i "s/compiler/$i/g" "$tools"/bin/cached-$i
 		done
@@ -1150,6 +1170,7 @@ build_llvm() {
 		-DCLANG_PLUGIN_SUPPORT=ON \
 		-DCLANG_VENDOR=Ataraxia \
 		-DGO_EXECUTABLE=GO_EXECUTABLE-NOTFOUND \
+		-DLLVM_APPEND_VC_REV=OFF \
 		-DLLVM_BUILD_LLVM_DYLIB=ON \
 		-DLLVM_LINK_LLVM_DYLIB=ON \
 		-DLLVM_ENABLE_LIBEDIT=OFF \
@@ -1225,7 +1246,8 @@ build_glibc_headers() {
 	unpack_file glibc-$glibc_version.tar.xz
 
 	cd "$sources/glibc-$glibc_version"
-	epatch glibc/0001-fix-build-using-clang.patch
+	epatch glibc/0001-Adopt-building-glibc-using-LLVM-clang.patch
+	epatch glibc/0002-Deny-LD_PRELOAD-of-files-in-NOEXEC-mount.patch
 
 	mkdir headers-build
 	cd headers-build
@@ -1234,8 +1256,10 @@ build_glibc_headers() {
 	echo "libc_cv_c_cleanup=yes" >> config.cache
 
 	BUILD_CC="$HOSTCC" \
-	CC="$xtarget-clang" \
-	CXX="$xtarget-clang++" \
+	CC="$TARGET_CC" \
+	CXX="$TARGET_CXX" \
+	CFLAGS="$baseCflags" \
+	CXXFLAGS="$baseCflags" \
 	../configure \
 		--build=$xhost \
 		--host=$xtarget \
@@ -1245,7 +1269,6 @@ build_glibc_headers() {
 		--without-gd \
 		--without-selinux \
 		--enable-kernel=3.2 \
-		--disable-multiarch \
 		--disable-profile
 
 	emake install-headers \
@@ -1257,22 +1280,27 @@ build_glibc_headers() {
 	touch "$sysroot"/usr/include/bits/stdio_lim.h
 }
 
-build_compiler_rt() {
+build_compiler_rt_builtins() {
 	local extraOpts
 
 	if test $barch = "x86_64"; then
 		extraOpts="-DCAN_TARGET_x86_64=ON -DCAN_TARGET_i386=OFF"
 	fi
 
+	cd "$sources/llvm-project-$llvm_version.src/compiler-rt"
+	epatch compiler-rt/0001-Build-float128-soft-float-builtins-for-x86_64.patch
+
 	cd "$sources"
+	CFLAGS="$baseCflags" \
+	CXXFLAGS="$baseCflags" \
 	cmake \
 		-S "$sources/llvm-project-$llvm_version.src/compiler-rt" \
-		-B build-compiler-rt -G Ninja \
+		-B build-builtins -G Ninja \
 		-DCMAKE_INSTALL_PREFIX="$tools" \
 		-DCMAKE_BUILD_TYPE=MinSizeRel \
-		-DCMAKE_ASM_COMPILER="$tools/bin/$xtarget-clang" \
-		-DCMAKE_C_COMPILER="$tools/bin/$xtarget-clang" \
-		-DCMAKE_CXX_COMPILER="$tools/bin/$xtarget-clang++" \
+		-DCMAKE_ASM_COMPILER="$tools/bin/$TARGET_CC" \
+		-DCMAKE_C_COMPILER="$tools/bin/$TARGET_CC" \
+		-DCMAKE_CXX_COMPILER="$tools/bin/$TARGET_CXX" \
 		-DCMAKE_AR="$tools/bin/$xtarget-ar" \
 		-DCMAKE_NM="$tools/bin/$xtarget-nm" \
 		-DCMAKE_RANLIB="$tools/bin/$xtarget-ranlib" \
@@ -1288,8 +1316,81 @@ build_compiler_rt() {
 		-DCOMPILER_RT_BUILD_XRAY=OFF \
 		-DCOMPILER_RT_CRT_USE_EH_FRAME_REGISTRY=ON \
 		$extraOpts -Wno-dev
-	eninja -C build-compiler-rt
-	eninja -C build-compiler-rt install
+	eninja -C build-builtins
+	eninja -C build-builtins install
+}
+
+build_compiler_rt_sanitizers() {
+	cd "$sources"
+	CFLAGS="$baseCflags" \
+	CXXFLAGS="$baseCflags" \
+	cmake \
+		-S "$sources/llvm-project-$llvm_version.src/compiler-rt" \
+		-B build-sanitizers -G Ninja \
+		-DCMAKE_INSTALL_PREFIX="$tools" \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_ASM_COMPILER="$tools/bin/$TARGET_CC" \
+		-DCMAKE_C_COMPILER="$tools/bin/$TARGET_CC" \
+		-DCMAKE_CXX_COMPILER="$tools/bin/$TARGET_CXX" \
+		-DCMAKE_AR="$tools/bin/$xtarget-ar" \
+		-DCMAKE_NM="$tools/bin/$xtarget-nm" \
+		-DCMAKE_RANLIB="$tools/bin/$xtarget-ranlib" \
+		-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+		-DCOMPILER_RT_INSTALL_PATH="$tools/lib/clang/$llvm_version" \
+		-DCOMPILER_RT_BUILD_BUILTINS=OFF \
+		-DCOMPILER_RT_BUILD_CRT=OFF \
+		-DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
+		-DCOMPILER_RT_BUILD_MEMPROF=OFF \
+		-DCOMPILER_RT_BUILD_ORC=OFF \
+		-DCOMPILER_RT_BUILD_PROFILE=OFF \
+		-DCOMPILER_RT_BUILD_SANITIZERS=ON \
+		-DCOMPILER_RT_BUILD_XRAY=OFF \
+		$extraOpts -Wno-dev
+	eninja -C build-sanitizers cfi safestack
+
+	install -m644 -t "$tools"/lib/clang/$llvm_version/lib/linux build-sanitizers/lib/linux/*.a
+}
+
+build_glibc() {
+	local extraOpts
+
+	case "$barch" in
+		arm64) extraOpts="--enable-memory-tagging" ;;
+	esac
+
+	cd "$sources/glibc-$glibc_version"
+	mkdir glibc-build
+	cd glibc-build
+
+	echo "slibdir=/usr/$libSuffix" >> configparms
+	echo "rtlddir=/usr/$libSuffix" >> configparms
+	echo "sbindir=/usr/bin" >> configparms
+	echo "rootsbindir=/usr/bin" >> configparms
+
+	BUILD_CC="$HOSTCC" \
+	CC="$TARGET_CC" \
+	CXX="$TARGET_CXX" \
+	CFLAGS="$baseCflags" \
+	CXXFLAGS="$baseCflags" \
+	../configure $extraOpts \
+		--build=$xhost \
+		--host=$xtarget \
+		--prefix=/usr \
+		--libdir=/usr/$libSuffix \
+		--libexecdir=/usr/libexec \
+		--without-cvs \
+		--without-gd \
+		--without-selinux \
+		--enable-bind-now \
+		--enable-kernel=3.2 \
+		--enable-stack-protector=strong \
+		--enable-tunables \
+		--disable-build-nscd \
+		--disable-crypt \
+		--disable-nscd \
+		--disable-profile
+	emake
+	emake install_root="$sysroot" install
 }
 
 main() {
@@ -1346,7 +1447,11 @@ main() {
 	build_llvm
 	build_kernel_headers
 	build_glibc_headers
-	build_compiler_rt
+	build_compiler_rt_builtins
+	if test "$barch" = "x86_64" || test "$barch" = "arm64"; then
+		build_compiler_rt_sanitizers
+	fi
+	build_glibc
 
 	msg "Toolchain build done."
 }

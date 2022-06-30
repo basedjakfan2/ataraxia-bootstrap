@@ -1,0 +1,70 @@
+From b04e86fdf347a4cb0576f32ae981d378f5e4e8ee Mon Sep 17 00:00:00 2001
+From: Taylor Berlioz <nagakamira@gmail.com>
+Date: Thu, 30 Jun 2022 14:04:00 -0700
+Subject: [PATCH 2/2] Deny LD_PRELOAD of files in NOEXEC mount
+
+This commit hardens against a security bug in dl-load.c
+
+Previously, one could dynamically load any shared object files even if
+they resided on a NOEXEC mount partition. This introduces an exploit
+where an attacker may load shared objects. These shared objects may
+then usea ROP attack to conduct arbitrary execution, getting around
+the NOEXEC requirement.
+
+This fixes it by checking the file before reading if it lies in
+a NOEXEC mount via an fstatvfs call.
+
+Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
+---
+ elf/dl-load.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/elf/dl-load.c b/elf/dl-load.c
+index c6ea1b5f..a9ecb187 100644
+--- a/elf/dl-load.c
++++ b/elf/dl-load.c
+@@ -30,6 +30,7 @@
+ #include <sys/mman.h>
+ #include <sys/param.h>
+ #include <sys/stat.h>
++#include <sys/statvfs.h>
+ #include <sys/types.h>
+ #include <gnu/lib-names.h>
+ 
+@@ -1556,6 +1557,18 @@ print_search_path (struct r_search_path_elem **list,
+     _dl_debug_printf_c ("\t\t(%s)\n", what);
+ }
+ 
++/* Check if a the passed in file descriptor points to file on an executable mount.  */
++static bool
++check_exec (int fd)
++{
++  struct statvfs buf;
++  int stated = fstatvfs (fd, &buf);
++  if (stated == 0)
++    return !(buf.f_flag & ST_NOEXEC);
++  /* Could not fstat the file.  */
++  return false;
++}
++
+ /* Open a file and verify it is an ELF file for this architecture.  We
+    ignore only ELF files for other architectures.  Non-ELF files and
+    ELF files with different header information cause fatal errors since
+@@ -1639,6 +1652,14 @@ open_verify (const char *name, int fd,
+       __set_errno (0);
+       fbp->len = 0;
+       assert (sizeof (fbp->buf) > sizeof (ElfW(Ehdr)));
++
++      /* Before we read in the file, check if the file is in an exec mount */
++      if (__glibc_unlikely (!check_exec(fd)))
++	{
++	  errstring = N_("file not located on exec mount");
++	  goto lose;
++	}
++
+       /* Read in the header.  */
+       do
+ 	{
+-- 
+2.34.1
+

@@ -1,13 +1,27 @@
-From afde1bc48a04c126b28dfa10a5856c469f5d3756 Mon Sep 17 00:00:00 2001
+From 0bcc3a20ff630d7cb628919c132e145e3af81ea0 Mon Sep 17 00:00:00 2001
 From: Taylor Berlioz <nagakamira@gmail.com>
-Date: Thu, 30 Jun 2022 09:54:17 -0700
-Subject: [PATCH] fix build using clang
+Date: Thu, 30 Jun 2022 14:03:20 -0700
+Subject: [PATCH 1/2] Adopt building glibc using LLVM/clang
+
+Huge cherry pick from azanella/clang branch, many rejections have been fixed
+Many warnings have been fixed as well
+
+Following commits have been backported from glibc-2.36:
+f39ff483f320878b2a2950353d05747eae623216
+a4ea49f85ea421979e8b269e286e450daac57454
+657472b2a50f67b12e5bbe5827582c9c2bb82dc3
+c7f05bd5342517f3f751e6ea8dec1916b80bee8a
+33f4d09bdc3d7730ae2fb3e9b67819d32a6b9ae6
+41397b9337da4f9c4bba4b6786c9edf961469ace
+0374b487a71ad07005a816191dca829a7e6cdcae
+2a16484a750361974ffb7a4faa22bec7afda2f46
+06e91f1a2ebfb2d8a4ffa7285079c77ece20b6aa
 
 Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
 ---
- Makeconfig                                    |    2 +-
+ Makeconfig                                    |   23 +-
  Makefile                                      |    2 +
- Makerules                                     |    8 +-
+ Makerules                                     |   10 +-
  Rules                                         |    2 +
  aclocal.m4                                    |    6 -
  argp/Makefile                                 |    9 +-
@@ -26,9 +40,9 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  benchtests/ilogbf128-inputs                   |    4 +-
  catgets/config.h                              |   14 -
  catgets/gencat.c                              |    9 +-
- config.make.in                                |    1 -
- configure                                     |  403 ++-
- configure.ac                                  |  176 +-
+ config.make.in                                |    2 +-
+ configure                                     |  426 +++-
+ configure.ac                                  |  184 +-
  conform/conformtest.py                        |   31 +-
  conform/data/stdint.h-data                    |    4 +-
  csu/libc-tls.c                                |    8 +-
@@ -38,7 +52,7 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  debug/tst-backtrace.h                         |    2 +-
  debug/tst-ssp-1.c                             |    2 +-
  dirent/Makefile                               |    1 +
- elf/Makefile                                  |   56 +-
+ elf/Makefile                                  |   60 +-
  elf/dl-debug.c                                |    2 +-
  elf/dl-load.c                                 |    2 +-
  elf/dl-lookup.c                               |    4 +-
@@ -129,7 +143,7 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  include/features.h                            |    2 +-
  include/gmp.h                                 |   12 -
  include/libc-diag.h                           |   21 +
- include/libc-symbols.h                        |   26 +-
+ include/libc-symbols.h                        |   33 +-
  include/math.h                                |    4 +-
  include/stdio.h                               |   74 +-
  include/stdlib.h                              |   34 +-
@@ -204,7 +218,7 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  malloc/tst-mallocstate.c                      |    2 +-
  malloc/tst-memalign.c                         |    7 +-
  malloc/tst-tcfree3.c                          |    6 +-
- math/Makefile                                 |   49 +-
+ math/Makefile                                 |   41 +-
  math/bug-tgmath1.c                            |    5 +
  math/complex.h                                |    2 +-
  math/gen-tgmath-tests.py                      |   38 +-
@@ -252,7 +266,6 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  nptl/tst-thread-exit-clobber.cc               |   12 +-
  nptl/tst-thread-setspecific.c                 |    2 +
  nptl/tst-thread_local1.cc                     |   12 +-
- nscd/Makefile                                 |    2 +
  nscd/mem.c                                    |    6 +-
  nss/nss_files/files-parse.c                   |    4 +
  nss/nss_module.c                              |    7 +
@@ -340,7 +353,6 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  sysdeps/aarch64/Makefile                      |    1 +
  sysdeps/aarch64/fpu/fpu_control.h             |   36 +-
  sysdeps/aarch64/fpu/fraiseexcpt.c             |    2 +-
- sysdeps/aarch64/multiarch/Makefile            |    6 +
  sysdeps/aarch64/nptl/tls.h                    |    2 +-
  sysdeps/aarch64/sfp-machine.h                 |    2 +-
  sysdeps/aarch64/tlsdesc.sym                   |    2 +-
@@ -442,7 +454,6 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  .../sparc32/sparcv9/multiarch/memset-ultra1.S |    1 +
  sysdeps/sparc/sparc64/memset.S                |    1 +
  .../sparc/sparc64/multiarch/memset-ultra1.S   |    1 +
- sysdeps/unix/sysv/linux/Makefile              |    4 +
  .../unix/sysv/linux/aarch64/cpu-features.c    |    2 +-
  sysdeps/unix/sysv/linux/aarch64/sysconf.c     |    2 +-
  sysdeps/unix/sysv/linux/arc/mmap_internal.h   |    2 +-
@@ -518,7 +529,7 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  wcsmbs/wchar.h                                |  229 +-
  wcsmbs/wcsmbs-tst1.c                          |    2 +-
  wctype/Makefile                               |    2 +
- 513 files changed, 5008 insertions(+), 3937 deletions(-)
+ 510 files changed, 5045 insertions(+), 3946 deletions(-)
  delete mode 100644 argp/bits/argp-ldbl.h
  delete mode 100644 catgets/config.h
  rename stdlib/bits/monetary-ldbl.h => elf/dl-symbol-hacks.h (64%)
@@ -543,10 +554,55 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  delete mode 100644 wcsmbs/bits/wchar-ldbl.h
 
 diff --git a/Makeconfig b/Makeconfig
-index 47db08d6..c0cf1e28 100644
+index 47db08d6..3d8e9f53 100644
 --- a/Makeconfig
 +++ b/Makeconfig
-@@ -861,7 +861,7 @@ endif
+@@ -669,22 +669,23 @@ else
+ endif
+ libgcc_eh := -Wl,--as-needed -lgcc_s $(libunwind) -Wl,--no-as-needed
+ gnulib-arch =
+-gnulib = -lgcc $(gnulib-arch)
+-gnulib-tests := -lgcc $(libgcc_eh)
++gnulib = `$(CC) $(sysdep-LDFLAGS) --print-libgcc-file-name` $(gnulib-arch)
++gnulib-tests := `$(CC) $(sysdep-LDFLAGS) --print-libgcc-file-name` $(libgcc_eh)
+ static-gnulib-arch =
+ # By default, elf/static-stubs.o, instead of -lgcc_eh, is used to
+ # statically link programs.  When --disable-shared is used, we use
+ # -lgcc_eh since elf/static-stubs.o isn't sufficient.
+ ifeq (yes,$(build-shared))
+-static-gnulib = -lgcc $(static-gnulib-arch)
++static-gnulib = `$(CC) $(sysdep-LDFLAGS) --print-libgcc-file-name` $(static-gnulib-arch)
+ else
+-static-gnulib = -lgcc -lgcc_eh $(static-gnulib-arch)
++static-gnulib = `$(CC) $(sysdep-LDFLAGS) --print-libgcc-file-name` $(static-gnulib-arch)
+ endif
+-static-gnulib-tests := -lgcc -lgcc_eh $(libunwind)
+-libc.so-gnulib := -lgcc
++static-gnulib-tests := `$(CC) $(sysdep-LDFLAGS) --print-libgcc-file-name` $(libunwind)
++libc.so-gnulib := `$(CC) $(sysdep-LDFLAGS) --print-libgcc-file-name`
+ endif
+ +preinit = $(addprefix $(csu-objpfx),crti.o)
+ +postinit = $(addprefix $(csu-objpfx),crtn.o)
++ifeq (no,$(is-clang))
+ +prector = `$(CC) $(sysdep-LDFLAGS) --print-file-name=crtbegin.o`
+ +postctor = `$(CC) $(sysdep-LDFLAGS) --print-file-name=crtend.o`
+ # Variants of the two previous definitions for linking PIE programs.
+@@ -699,6 +700,14 @@ else
+ +prectorT = `$(CC) $(sysdep-LDFLAGS) --print-file-name=crtbeginT.o`
+ +postctorT = `$(CC) $(sysdep-LDFLAGS) --print-file-name=crtend.o`
+ endif
++else
+++prector = `$(CC) $(sysdep-LDFLAGS) --print-file-name=clang_rt.crtbegin-$(config-machine).o`
+++postctor = `$(CC) $(sysdep-LDFLAGS) --print-file-name=clang_rt.crtend-$(config-machine).o`
+++prectorS = `$(CC) $(sysdep-LDFLAGS) --print-file-name=clang_rt.crtbegin-$(config-machine).o`
+++postctorS = `$(CC) $(sysdep-LDFLAGS) --print-file-name=clang_rt.crtend-$(config-machine).o`
+++prectorT = `$(CC) $(sysdep-LDFLAGS) --print-file-name=clang_rt.crtbegin-$(config-machine).o`
+++postctorT = `$(CC) $(sysdep-LDFLAGS) --print-file-name=clang_rt.crtend-$(config-machine).o`
++endif
+ csu-objpfx = $(common-objpfx)csu/
+ elf-objpfx = $(common-objpfx)elf/
+ 
+@@ -861,7 +870,7 @@ endif
  # We have to assume that glibc functions are called in any rounding
  # mode and also change the rounding mode in a few functions. So,
  # disable any optimization that assume default rounding mode.
@@ -576,7 +632,7 @@ index b1454882..d520abf9 100644
  	$(evaluate-test)
  endif # $(CXX)
 diff --git a/Makerules b/Makerules
-index 5de2cec6..8c5588bb 100644
+index 5de2cec6..e3260bc4 100644
 --- a/Makerules
 +++ b/Makerules
 @@ -540,7 +540,8 @@ $(LINK.o) -shared -static-libgcc -Wl,-O1 $(sysdep-LDFLAGS) \
@@ -599,6 +655,15 @@ index 5de2cec6..8c5588bb 100644
  endef
  
  # This macro is similar to build-shlib but it does not define a soname
+@@ -645,7 +647,7 @@ LDFLAGS-c.so += -e __libc_main
+ # between libc.so and ld.so, which can make it impossible to upgrade.
+ $(common-objpfx)libc_pic.os: $(common-objpfx)libc_pic.a
+ 	$(LINK.o) -nostdlib -nostartfiles -r -o $@ \
+-	$(LDFLAGS-c_pic.os) -Wl,-d $(whole-archive) $^ -o $@
++	$(LDFLAGS-c_pic.os) $(whole-archive) $^ -o $@
+ 
+ ifeq (,$(strip $(shlib-lds-flags)))
+ # Generate a list of -R options to excise .gnu.glibc-stub.* sections.
 @@ -1171,8 +1173,6 @@ $(inst_includedir)/%.h: $(common-objpfx)%.h $(+force)
  	$(do-install)
  $(inst_includedir)/%.h: %.h $(+force)
@@ -1027,10 +1092,10 @@ index cebf1fd4..8c284a97 100644
  			     message_run->number, message_run->fname,
  			     message_run->line);
 diff --git a/config.make.in b/config.make.in
-index 6d43e691..ecde84a7 100644
+index 6d43e691..576cdea8 100644
 --- a/config.make.in
 +++ b/config.make.in
-@@ -69,7 +69,6 @@ have-selinux = @have_selinux@
+@@ -69,10 +69,10 @@ have-selinux = @have_selinux@
  have-libaudit = @have_libaudit@
  have-libcap = @have_libcap@
  have-cc-with-libunwind = @libc_cv_cc_with_libunwind@
@@ -1038,8 +1103,12 @@ index 6d43e691..ecde84a7 100644
  bind-now = @bindnow@
  have-hash-style = @libc_cv_hashstyle@
  use-default-link = @use_default_link@
++is-clang = @libc_cv_compiler_is_clang@
+ have-cxx-thread_local = @libc_cv_cxx_thread_local@
+ have-loop-to-function = @libc_cv_cc_loop_to_function@
+ have-textrel_ifunc = @libc_cv_textrel_ifunc@
 diff --git a/configure b/configure
-index 00dc6383..31c37700 100755
+index 00dc6383..00dbeb9c 100755
 --- a/configure
 +++ b/configure
 @@ -620,7 +620,6 @@ libc_cv_cc_loop_to_function
@@ -1050,7 +1119,15 @@ index 00dc6383..31c37700 100755
  libc_cv_has_glob_dat
  libc_cv_hashstyle
  libc_cv_fpie
-@@ -649,7 +648,6 @@ MAKEINFO
+@@ -642,6 +641,7 @@ PYTHON
+ PYTHON_PROG
+ AUTOCONF
+ NM
++libc_cv_compiler_is_clang
+ BISON
+ AWK
+ SED
+@@ -649,7 +649,6 @@ MAKEINFO
  MSGFMT
  MAKE
  LD
@@ -1058,7 +1135,7 @@ index 00dc6383..31c37700 100755
  GPROF
  OBJCOPY
  OBJDUMP
-@@ -730,7 +728,6 @@ infodir
+@@ -730,7 +729,6 @@ infodir
  docdir
  oldincludedir
  includedir
@@ -1066,7 +1143,7 @@ index 00dc6383..31c37700 100755
  localstatedir
  sharedstatedir
  sysconfdir
-@@ -845,7 +842,6 @@ datadir='${datarootdir}'
+@@ -845,7 +843,6 @@ datadir='${datarootdir}'
  sysconfdir='${prefix}/etc'
  sharedstatedir='${prefix}/com'
  localstatedir='${prefix}/var'
@@ -1074,7 +1151,7 @@ index 00dc6383..31c37700 100755
  includedir='${prefix}/include'
  oldincludedir='/usr/include'
  docdir='${datarootdir}/doc/${PACKAGE_TARNAME}'
-@@ -1098,15 +1094,6 @@ do
+@@ -1098,15 +1095,6 @@ do
    | -silent | --silent | --silen | --sile | --sil)
      silent=yes ;;
  
@@ -1090,7 +1167,7 @@ index 00dc6383..31c37700 100755
    -sbindir | --sbindir | --sbindi | --sbind | --sbin | --sbi | --sb)
      ac_prev=sbindir ;;
    -sbindir=* | --sbindir=* | --sbindi=* | --sbind=* | --sbin=* \
-@@ -1244,7 +1231,7 @@ fi
+@@ -1244,7 +1232,7 @@ fi
  for ac_var in	exec_prefix prefix bindir sbindir libexecdir datarootdir \
  		datadir sysconfdir sharedstatedir localstatedir includedir \
  		oldincludedir docdir infodir htmldir dvidir pdfdir psdir \
@@ -1099,7 +1176,7 @@ index 00dc6383..31c37700 100755
  do
    eval ac_val=\$$ac_var
    # Remove trailing slashes.
-@@ -1397,7 +1384,6 @@ Fine tuning of the installation directories:
+@@ -1397,7 +1385,6 @@ Fine tuning of the installation directories:
    --sysconfdir=DIR        read-only single-machine data [PREFIX/etc]
    --sharedstatedir=DIR    modifiable architecture-independent data [PREFIX/com]
    --localstatedir=DIR     modifiable single-machine data [PREFIX/var]
@@ -1107,7 +1184,7 @@ index 00dc6383..31c37700 100755
    --libdir=DIR            object code libraries [EPREFIX/lib]
    --includedir=DIR        C header files [PREFIX/include]
    --oldincludedir=DIR     C header files for non-gcc [/usr/include]
-@@ -3388,7 +3374,7 @@ fi
+@@ -3388,7 +3375,7 @@ fi
  if test "${with_default_link+set}" = set; then :
    withval=$with_default_link; use_default_link=$withval
  else
@@ -1116,7 +1193,7 @@ index 00dc6383..31c37700 100755
  fi
  
  
-@@ -4591,7 +4577,6 @@ case "$CC" in
+@@ -4591,7 +4578,6 @@ case "$CC" in
      *fuse-ld=lld*) LDNAME=ld.lld;;
      *)             LDNAME=ld;;
  esac
@@ -1124,7 +1201,7 @@ index 00dc6383..31c37700 100755
  LD=`$CC -print-prog-name=$LDNAME`
  AR=`$CC -print-prog-name=ar`
  
-@@ -4603,25 +4588,6 @@ GPROF=`$CC -print-prog-name=gprof`
+@@ -4603,25 +4589,6 @@ GPROF=`$CC -print-prog-name=gprof`
  
  
  # Determine whether we are using GNU binutils.
@@ -1150,7 +1227,7 @@ index 00dc6383..31c37700 100755
  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether $LD is GNU ld" >&5
  $as_echo_n "checking whether $LD is GNU ld... " >&6; }
  if ${libc_cv_prog_ld_gnu+:} false; then :
-@@ -4642,70 +4608,6 @@ gnu_ld=$libc_cv_prog_ld_gnu
+@@ -4642,70 +4609,6 @@ gnu_ld=$libc_cv_prog_ld_gnu
  
  
  # Accept binutils 2.25 or newer.
@@ -1221,7 +1298,7 @@ index 00dc6383..31c37700 100755
  libc_cv_with_lld=no
  case $($LD --version) in
    "GNU gold"*)
-@@ -5304,7 +5206,7 @@ int
+@@ -5304,7 +5207,7 @@ int
  main ()
  {
  
@@ -1230,7 +1307,36 @@ index 00dc6383..31c37700 100755
  #error insufficient compiler
  #endif
    ;
-@@ -5594,8 +5496,8 @@ fi
+@@ -5324,6 +5227,28 @@ if test $libc_cv_compiler_ok != yes; then :
+   critic_missing="$critic_missing compiler"
+ fi
+ 
++cat confdefs.h - <<_ACEOF >conftest.$ac_ext
++/* end confdefs.h.  */
++
++int
++main ()
++{
++
++#ifndef __clang__
++# error not clang
++#endif
++  ;
++  return 0;
++}
++_ACEOF
++if ac_fn_c_try_cpp "$LINENO"; then :
++  libc_cv_compiler_is_clang=yes
++else
++  libc_cv_compiler_is_clang=no
++fi
++rm -f conftest.err conftest.i conftest.$ac_ext
++
++
+ if test -n "$ac_tool_prefix"; then
+   # Extract the first word of "${ac_tool_prefix}nm", so it can be a program name with args.
+ set dummy ${ac_tool_prefix}nm; ac_word=$2
+@@ -5594,8 +5519,8 @@ fi
  # copy of those headers in Makerules.
  if test -n "$CXX"; then
    find_cxx_header () {
@@ -1241,7 +1347,7 @@ index 00dc6383..31c37700 100755
    }
    CXX_CSTDLIB_HEADER="$(find_cxx_header cstdlib)"
    CXX_CMATH_HEADER="$(find_cxx_header cmath)"
-@@ -6235,6 +6137,28 @@ fi
+@@ -6235,6 +6160,28 @@ fi
  $as_echo "$libc_cv_hashstyle" >&6; }
  
  
@@ -1270,7 +1376,7 @@ index 00dc6383..31c37700 100755
  # The linker's default -shared behavior is good enough if it
  # does these things that our custom linker scripts ensure that
  # all allocated NOTE sections come first.
-@@ -6331,68 +6255,110 @@ fi
+@@ -6331,68 +6278,110 @@ fi
  $as_echo "$libc_cv_has_glob_dat" >&6; }
  
  
@@ -1409,7 +1515,7 @@ index 00dc6383..31c37700 100755
  
  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether cc puts quotes around section names" >&5
  $as_echo_n "checking whether cc puts quotes around section names... " >&6; }
-@@ -6462,7 +6428,7 @@ else
+@@ -6462,7 +6451,7 @@ else
  extern char *strstr (const char *, const char *) __asm ("my_strstr");
  char *foo (const char *a, const char *b)
  {
@@ -1418,7 +1524,7 @@ index 00dc6383..31c37700 100755
  }
  EOF
  if { ac_try='${CC-cc} -O3 -S conftest.c -o - | grep -F "my_strstr" > /dev/null'
-@@ -6533,6 +6499,100 @@ $as_echo "$libc_cv_cc_submachine" >&6; }
+@@ -6533,6 +6522,100 @@ $as_echo "$libc_cv_cc_submachine" >&6; }
  fi
  
  
@@ -1519,7 +1625,7 @@ index 00dc6383..31c37700 100755
  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if $CC accepts -fno-tree-loop-distribute-patterns with \
  __attribute__ ((__optimize__))" >&5
  $as_echo_n "checking if $CC accepts -fno-tree-loop-distribute-patterns with \
-@@ -6546,7 +6606,7 @@ __attribute__ ((__optimize__ ("-fno-tree-loop-distribute-patterns")))
+@@ -6546,7 +6629,7 @@ __attribute__ ((__optimize__ ("-fno-tree-loop-distribute-patterns")))
  foo (void) {}
  EOF
  libc_cv_cc_loop_to_function=no
@@ -1528,7 +1634,7 @@ index 00dc6383..31c37700 100755
    { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
    (eval $ac_try) 2>&5
    ac_status=$?
-@@ -6565,6 +6625,83 @@ if test $libc_cv_cc_loop_to_function = yes; then
+@@ -6565,6 +6648,83 @@ if test $libc_cv_cc_loop_to_function = yes; then
  fi
  
  
@@ -1613,7 +1719,7 @@ index 00dc6383..31c37700 100755
  $as_echo_n "checking for libgd... " >&6; }
  if test "$with_gd" != "no"; then
 diff --git a/configure.ac b/configure.ac
-index 87f67d25..33e98a4f 100644
+index 87f67d25..a5835162 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -153,7 +153,7 @@ AC_ARG_WITH([default-link],
@@ -1646,7 +1752,22 @@ index 87f67d25..33e98a4f 100644
  #error insufficient compiler
  #endif]])],
  	       [libc_cv_compiler_ok=yes],
-@@ -1136,8 +1131,8 @@ AC_SUBST(CXX_SYSINCLUDES)
+@@ -1068,6 +1063,14 @@ AC_PREPROC_IFELSE([AC_LANG_PROGRAM([[]], [[
+ AS_IF([test $libc_cv_compiler_ok != yes],
+       [critic_missing="$critic_missing compiler"])
+ 
++AC_PREPROC_IFELSE([AC_LANG_PROGRAM([[]], [[
++#ifndef __clang__
++# error not clang
++#endif]])],
++	       [libc_cv_compiler_is_clang=yes],
++	       [libc_cv_compiler_is_clang=no])
++AC_SUBST(libc_cv_compiler_is_clang)
++
+ AC_CHECK_TOOL(NM, nm, false)
+ 
+ if test "x$maintainer" = "xyes"; then
+@@ -1136,8 +1139,8 @@ AC_SUBST(CXX_SYSINCLUDES)
  # copy of those headers in Makerules.
  if test -n "$CXX"; then
    find_cxx_header () {
@@ -1657,7 +1778,7 @@ index 87f67d25..33e98a4f 100644
    }
    CXX_CSTDLIB_HEADER="$(find_cxx_header cstdlib)"
    CXX_CMATH_HEADER="$(find_cxx_header cmath)"
-@@ -1402,6 +1397,15 @@ fi
+@@ -1402,6 +1405,15 @@ fi
  rm -f conftest*])
  AC_SUBST(libc_cv_hashstyle)
  
@@ -1673,7 +1794,7 @@ index 87f67d25..33e98a4f 100644
  # The linker's default -shared behavior is good enough if it
  # does these things that our custom linker scripts ensure that
  # all allocated NOTE sections come first.
-@@ -1478,25 +1482,6 @@ fi
+@@ -1478,25 +1490,6 @@ fi
  rm -f conftest*])
  AC_SUBST(libc_cv_has_glob_dat)
  
@@ -1699,7 +1820,7 @@ index 87f67d25..33e98a4f 100644
  AC_CACHE_CHECK([for -mtls-dialect=gnu2], libc_cv_mtls_dialect_gnu2,
  [dnl
  cat > conftest.c <<EOF
-@@ -1517,6 +1502,44 @@ rm -f conftest*])
+@@ -1517,6 +1510,44 @@ rm -f conftest*])
  AC_SUBST(libc_cv_mtls_dialect_gnu2)
  LIBC_CONFIG_VAR([have-mtls-dialect-gnu2], [$libc_cv_mtls_dialect_gnu2])
  
@@ -1744,7 +1865,7 @@ index 87f67d25..33e98a4f 100644
  AC_CACHE_CHECK(whether cc puts quotes around section names,
  	       libc_cv_have_section_quotes,
  	       [cat > conftest.c <<EOF
-@@ -1562,7 +1585,7 @@ cat > conftest.c <<\EOF
+@@ -1562,7 +1593,7 @@ cat > conftest.c <<\EOF
  extern char *strstr (const char *, const char *) __asm ("my_strstr");
  char *foo (const char *a, const char *b)
  {
@@ -1753,7 +1874,7 @@ index 87f67d25..33e98a4f 100644
  }
  EOF
  dnl
-@@ -1601,6 +1624,52 @@ if test -n "$submachine"; then
+@@ -1601,6 +1632,52 @@ if test -n "$submachine"; then
  fi
  AC_SUBST(libc_cv_cc_submachine)
  
@@ -1806,7 +1927,7 @@ index 87f67d25..33e98a4f 100644
  AC_CACHE_CHECK(if $CC accepts -fno-tree-loop-distribute-patterns with \
  __attribute__ ((__optimize__)), libc_cv_cc_loop_to_function, [dnl
  cat > conftest.c <<EOF
-@@ -1609,7 +1678,7 @@ __attribute__ ((__optimize__ ("-fno-tree-loop-distribute-patterns")))
+@@ -1609,7 +1686,7 @@ __attribute__ ((__optimize__ ("-fno-tree-loop-distribute-patterns")))
  foo (void) {}
  EOF
  libc_cv_cc_loop_to_function=no
@@ -1815,7 +1936,7 @@ index 87f67d25..33e98a4f 100644
  then
    libc_cv_cc_loop_to_function=yes
  fi
-@@ -1619,6 +1688,53 @@ if test $libc_cv_cc_loop_to_function = yes; then
+@@ -1619,6 +1696,53 @@ if test $libc_cv_cc_loop_to_function = yes; then
  fi
  AC_SUBST(libc_cv_cc_loop_to_function)
  
@@ -2111,7 +2232,7 @@ index b80f6a73..cfa61826 100644
  include ../Rules
  
 diff --git a/elf/Makefile b/elf/Makefile
-index 5bdf0a38..0e240811 100644
+index 5bdf0a38..f2bb03f0 100644
 --- a/elf/Makefile
 +++ b/elf/Makefile
 @@ -453,8 +453,6 @@ tests += \
@@ -2231,6 +2352,24 @@ index 5bdf0a38..0e240811 100644
  extra-test-objs += $(addsuffix .os,$(strip $(modules-names)))
  
  # filtmod1.so, tst-big-note-lib.so, tst-ro-dynamic-mod.so have special
+@@ -1191,7 +1207,7 @@ $(objpfx)librtld.map: $(objpfx)dl-allobjs.os $(common-objpfx)libc_pic.a
+ 		echo ".globl $$symbol"; \
+ 		echo "$$symbol:"; \
+ 	done | $(CC) -o $@T.o $(ASFLAGS) -c -x assembler -
+-	$(reloc-link) -o $@.o $@T.o '-Wl,-(' $^ -lgcc '-Wl,-)' -Wl,-Map,$@T
++	$(reloc-link) -o $@.o $@T.o "-Wl,-(" $^ `$(reloc-link) --print-libgcc-file-name` "-Wl,-)" -Wl,-Map,$@T
+ 	rm -f %@T.o $@.o
+ 	mv -f $@T $@
+ 
+@@ -1221,7 +1237,7 @@ $(objpfx)rtld-libc.a: $(objpfx)librtld.mk FORCE
+ 	$(MAKE) -f $< -f rtld-Rules
+ 
+ $(objpfx)librtld.os: $(objpfx)dl-allobjs.os $(objpfx)rtld-libc.a
+-	$(LINK.o) -nostdlib -nostartfiles -r -o $@ '-Wl,-(' $^ -lgcc '-Wl,-)' \
++	$(LINK.o) -nostdlib -nostartfiles -r -o $@ "-Wl,-(" $^ `$(reloc-link) --print-libgcc-file-name` "-Wl,-)" \
+ 		  -Wl,-Map,$@.map
+ 
+ generated += librtld.map librtld.mk rtld-libc.a librtld.os.map
 @@ -1702,7 +1718,7 @@ $(objpfx)unload8.out: $(objpfx)unload8mod1.so $(objpfx)unload8mod1x.so
  
  $(objpfx)tst-tls9-static.out: $(objpfx)tst-tlsmod5.so $(objpfx)tst-tlsmod6.so
@@ -4976,10 +5115,24 @@ index 271c5b88..61e33d6c 100644
 +
  #endif /* libc-diag.h */
 diff --git a/include/libc-symbols.h b/include/libc-symbols.h
-index 662bd118..6dbc4def 100644
+index 662bd118..eafc9e60 100644
 --- a/include/libc-symbols.h
 +++ b/include/libc-symbols.h
-@@ -446,8 +446,13 @@ for linking")
+@@ -87,6 +87,13 @@
+ /* Obtain the definition of symbol_version_reference.  */
+ #include <libc-symver.h>
+ 
++#if defined(__clang__)
++#pragma GCC diagnostic ignored "-Wshift-count-negative"
++#pragma GCC diagnostic ignored "-Wshift-count-overflow"
++#pragma GCC diagnostic ignored "-Wsometimes-uninitialized"
++#pragma GCC diagnostic ignored "-Wunused-function"
++#endif
++
+ /* When PIC is defined and SHARED isn't defined, we are building PIE
+    by default.  */
+ #if defined PIC && !defined SHARED
+@@ -446,8 +453,13 @@ for linking")
  /* Used to disable stack protection in sensitive places, like ifunc
     resolvers and early static TLS init.  */
  #ifdef HAVE_CC_NO_STACK_PROTECTOR
@@ -4994,7 +5147,7 @@ index 662bd118..6dbc4def 100644
  #else
  # define inhibit_stack_protector
  #endif
-@@ -532,11 +537,21 @@ for linking")
+@@ -532,11 +544,21 @@ for linking")
    __attribute__ ((visibility ("hidden"), ##attrs))
  #  define hidden_proto(name, attrs...) \
    __hidden_proto (name, , __GI_##name, ##attrs)
@@ -5016,7 +5169,7 @@ index 662bd118..6dbc4def 100644
  #  define __hidden_asmname(name) \
    __hidden_asmname1 (__USER_LABEL_PREFIX__, name)
  #  define __hidden_asmname1(prefix, name) __hidden_asmname2(prefix, name)
-@@ -600,10 +615,17 @@ for linking")
+@@ -600,10 +622,17 @@ for linking")
    __hidden_proto (name, __thread, name, ##attrs)
  #  define __hidden_proto(name, thread, internal, attrs...)	     \
    extern thread __typeof (name) name __hidden_proto_hiddenattr (attrs);
@@ -5034,7 +5187,7 @@ index 662bd118..6dbc4def 100644
  # else
  #  define HIDDEN_JUMPTARGET(name) JUMPTARGET(name)
  # endif /* Not  __ASSEMBLER__ */
-@@ -619,6 +641,7 @@ for linking")
+@@ -619,6 +648,7 @@ for linking")
  
  #if IS_IN (libc)
  # define libc_hidden_proto(name, attrs...) hidden_proto (name, ##attrs)
@@ -5042,7 +5195,7 @@ index 662bd118..6dbc4def 100644
  # define libc_hidden_tls_proto(name, attrs...) hidden_tls_proto (name, ##attrs)
  # define libc_hidden_def(name) hidden_def (name)
  # define libc_hidden_weak(name) hidden_weak (name)
-@@ -630,6 +653,7 @@ for linking")
+@@ -630,6 +660,7 @@ for linking")
  # define libc_hidden_data_ver(local, name) hidden_data_ver (local, name)
  #else
  # define libc_hidden_proto(name, attrs...)
@@ -8105,7 +8258,7 @@ index 3a3149b3..215134a9 100644
  static int
  do_test (void)
 diff --git a/math/Makefile b/math/Makefile
-index 7dae2313..9dd4fb18 100644
+index 7dae2313..01ec3610 100644
 --- a/math/Makefile
 +++ b/math/Makefile
 @@ -248,8 +248,11 @@ tests = test-matherr-3 test-fenv basic-test \
@@ -8175,7 +8328,7 @@ index 7dae2313..9dd4fb18 100644
  
  CFLAGS-test-nan-const.c += -fno-builtin
  
-@@ -768,10 +771,28 @@ endif
+@@ -768,10 +771,20 @@ endif
  
  # These files quiet sNaNs in a way that is optimized away without
  # -fsignaling-nans.
@@ -8197,14 +8350,6 @@ index 7dae2313..9dd4fb18 100644
 +CFLAGS-fegetenv.c += -Wno-ignored-attributes
 +CFLAGS-fesetenv.c += -Wno-ignored-attributes
 +CFLAGS-feholdexcpt.c += -Wno-ignored-attributes
-+
-+CFLAGS-s_fdivl.c += -Wno-shift-count-negative -Wno-shift-count-overflow
-+CFLAGS-s_ffma.c += -Wno-sometimes-uninitialized
-+CFLAGS-s_ffmal.c += -Wno-sometimes-uninitialized
-+CFLAGS-s_dfmal.c += -Wno-sometimes-uninitialized
-+CFLAGS-s_fsqrt.c += -Wno-sometimes-uninitialized
-+CFLAGS-s_fsqrtl.c += -Wno-sometimes-uninitialized
-+CFLAGS-s_dsqrtl.c += -Wno-sometimes-uninitialized
  
  $(addprefix $(objpfx),\
  	    $(filter-out $(tests-static) $(libm-tests-vector),\
@@ -9825,19 +9970,6 @@ index 67e696b5..07538591 100644
  counting<Counter>::operation ()
  {
    // Optimization barrier.
-diff --git a/nscd/Makefile b/nscd/Makefile
-index 00179413..303c61b7 100644
---- a/nscd/Makefile
-+++ b/nscd/Makefile
-@@ -81,6 +81,8 @@ CFLAGS-nscd_initgroups.c += -fexceptions
- 
- CPPFLAGS-nscd += -D_FORTIFY_SOURCE=2
- 
-+CFLAGS-gai.c += -Wno-sometimes-uninitialized
-+
- ifeq (yesyes,$(have-fpie)$(build-shared))
- CFLAGS-nscd += $(pie-ccflag)
- endif
 diff --git a/nscd/mem.c b/nscd/mem.c
 index 4523f822..66aa53ea 100644
 --- a/nscd/mem.c
@@ -12592,20 +12724,6 @@ index bda61444..2a983076 100644
    const float fp_zero = 0.0;
    const float fp_one = 1.0;
    const float fp_max = FLT_MAX;
-diff --git a/sysdeps/aarch64/multiarch/Makefile b/sysdeps/aarch64/multiarch/Makefile
-index 7500cf1e..028f2140 100644
---- a/sysdeps/aarch64/multiarch/Makefile
-+++ b/sysdeps/aarch64/multiarch/Makefile
-@@ -6,3 +6,9 @@ sysdep_routines += memcpy_generic memcpy_advsimd memcpy_thunderx memcpy_thunderx
- 		   memchr_generic memchr_nosimd \
- 		   strlen_mte strlen_asimd
- endif
-+
-+CFLAGS-strlen.c += -Wno-unused-function
-+CFLAGS-memchr.c += -Wno-unused-function
-+CFLAGS-memcpy.c += -Wno-unused-function
-+CFLAGS-memmove.c += -Wno-unused-function
-+CFLAGS-memset.c += -Wno-unused-function
 diff --git a/sysdeps/aarch64/nptl/tls.h b/sysdeps/aarch64/nptl/tls.h
 index 8d62b31e..3e91f5df 100644
 --- a/sysdeps/aarch64/nptl/tls.h
@@ -16693,21 +16811,6 @@ index e0d34243..92793216 100644
  # include <sysdeps/sparc/sparc64/memset.S>
  #endif
 +strong_alias (__memset_ultra1, __memset_generic)
-diff --git a/sysdeps/unix/sysv/linux/Makefile b/sysdeps/unix/sysv/linux/Makefile
-index 7122f559..bdc95124 100644
---- a/sysdeps/unix/sysv/linux/Makefile
-+++ b/sysdeps/unix/sysv/linux/Makefile
-@@ -319,6 +319,10 @@ CFLAGS-getpid.o = -fomit-frame-pointer
- CFLAGS-getpid.os = -fomit-frame-pointer
- endif
- 
-+ifeq ($(subdir),time)
-+CFLAGS-gettimeofday.c += -Wno-unused-function
-+endif
-+
- ifeq ($(subdir),inet)
- sysdep_headers += netinet/if_fddi.h netinet/if_tr.h \
- 		  netipx/ipx.h netash/ash.h netax25/ax25.h netatalk/at.h \
 diff --git a/sysdeps/unix/sysv/linux/aarch64/cpu-features.c b/sysdeps/unix/sysv/linux/aarch64/cpu-features.c
 index 41dda8d0..9242b2c6 100644
 --- a/sysdeps/unix/sysv/linux/aarch64/cpu-features.c

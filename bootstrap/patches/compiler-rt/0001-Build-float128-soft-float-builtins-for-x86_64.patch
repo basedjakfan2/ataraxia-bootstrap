@@ -1,0 +1,218 @@
+From e0f188b067e38b7ee5bffcbc133e219ef25189a7 Mon Sep 17 00:00:00 2001
+From: Taylor Berlioz <nagakamira@gmail.com>
+Date: Thu, 30 Jun 2022 16:00:41 -0700
+Subject: [PATCH] Build float128 soft float builtins for x86_64
+
+Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
+---
+ lib/builtins/CMakeLists.txt |  1 +
+ lib/builtins/extenddftf2.c  |  4 ++
+ lib/builtins/extendhftf2.c  |  4 +-
+ lib/builtins/fp_lib.h       |  7 +++-
+ lib/builtins/powitf2.c      |  2 +-
+ lib/builtins/trunctfdf2.c   |  3 +-
+ lib/builtins/trunctfhf2.c   |  4 +-
+ lib/builtins/trunctfsf2.c   |  2 +-
+ lib/builtins/x86_64/sfp.c   | 76 +++++++++++++++++++++++++++++++++++++
+ 9 files changed, 93 insertions(+), 10 deletions(-)
+ create mode 100644 lib/builtins/x86_64/sfp.c
+
+diff --git a/lib/builtins/CMakeLists.txt b/lib/builtins/CMakeLists.txt
+index ea5ad9c..a2c086b 100644
+--- a/lib/builtins/CMakeLists.txt
++++ b/lib/builtins/CMakeLists.txt
+@@ -296,6 +296,7 @@ if (NOT MSVC)
+     x86_64/floatdisf.c
+     x86_64/floatundidf.S
+     x86_64/floatundisf.S
++    x86_64/sfp.c
+   )
+ 
+   if (NOT ANDROID)
+diff --git a/lib/builtins/extenddftf2.c b/lib/builtins/extenddftf2.c
+index ddf470e..5b035b5 100644
+--- a/lib/builtins/extenddftf2.c
++++ b/lib/builtins/extenddftf2.c
+@@ -18,4 +18,8 @@ COMPILER_RT_ABI fp_t __extenddftf2(double a) {
+   return __extendXfYf2__(a);
+ }
+ 
++COMPILER_RT_ABI fp_t __extendxftf2(double a) {
++  return __extendXfYf2__(a);
++}
++
+ #endif
+diff --git a/lib/builtins/extendhftf2.c b/lib/builtins/extendhftf2.c
+index aefe973..0240380 100644
+--- a/lib/builtins/extendhftf2.c
++++ b/lib/builtins/extendhftf2.c
+@@ -16,8 +16,6 @@
+ #define DST_QUAD
+ #include "fp_extend_impl.inc"
+ 
+-COMPILER_RT_ABI long double __extendhftf2(_Float16 a) {
+-  return __extendXfYf2__(a);
+-}
++COMPILER_RT_ABI fp_t __extendhftf2(_Float16 a) { return __extendXfYf2__(a); }
+ 
+ #endif
+diff --git a/lib/builtins/fp_lib.h b/lib/builtins/fp_lib.h
+index 3fb13a0..6d4e2e3 100644
+--- a/lib/builtins/fp_lib.h
++++ b/lib/builtins/fp_lib.h
+@@ -105,12 +105,17 @@ static __inline void wideMultiply(rep_t a, rep_t b, rep_t *hi, rep_t *lo) {
+ COMPILER_RT_ABI fp_t __adddf3(fp_t a, fp_t b);
+ 
+ #elif defined QUAD_PRECISION
+-#if __LDBL_MANT_DIG__ == 113 && defined(__SIZEOF_INT128__)
++#if (__LDBL_MANT_DIG__ == 113 || defined(__x86_64__)) \
++    && defined(__SIZEOF_INT128__)
+ #define CRT_LDBL_128BIT
+ typedef uint64_t half_rep_t;
+ typedef __uint128_t rep_t;
+ typedef __int128_t srep_t;
++#if defined(__FLOAT128__) || defined(__SIZEOF_FLOAT128__)
++typedef __float128 fp_t;
++#else
+ typedef long double fp_t;
++#endif
+ #define HALF_REP_C UINT64_C
+ #define REP_C (__uint128_t)
+ // Note: Since there is no explicit way to tell compiler the constant is a
+diff --git a/lib/builtins/powitf2.c b/lib/builtins/powitf2.c
+index 8e639a0..eecdefc 100644
+--- a/lib/builtins/powitf2.c
++++ b/lib/builtins/powitf2.c
+@@ -19,7 +19,7 @@
+ 
+ COMPILER_RT_ABI long double __powitf2(long double a, int b) {
+   const int recip = b < 0;
+-  long double r = 1;
++  fp_t r = 1;
+   while (1) {
+     if (b & 1)
+       r *= a;
+diff --git a/lib/builtins/trunctfdf2.c b/lib/builtins/trunctfdf2.c
+index 6857ea5..817172d 100644
+--- a/lib/builtins/trunctfdf2.c
++++ b/lib/builtins/trunctfdf2.c
+@@ -14,6 +14,7 @@
+ #define DST_DOUBLE
+ #include "fp_trunc_impl.inc"
+ 
+-COMPILER_RT_ABI double __trunctfdf2(long double a) { return __truncXfYf2__(a); }
++COMPILER_RT_ABI double __trunctfdf2(fp_t a) { return __truncXfYf2__(a); }
++COMPILER_RT_ABI double __trunctfxf2(fp_t a) { return __truncXfYf2__(a); }
+ 
+ #endif
+diff --git a/lib/builtins/trunctfhf2.c b/lib/builtins/trunctfhf2.c
+index e3a2309..cd56e0c 100644
+--- a/lib/builtins/trunctfhf2.c
++++ b/lib/builtins/trunctfhf2.c
+@@ -16,8 +16,6 @@
+ #define DST_HALF
+ #include "fp_trunc_impl.inc"
+ 
+-COMPILER_RT_ABI _Float16 __trunctfhf2(long double a) {
+-  return __truncXfYf2__(a);
+-}
++COMPILER_RT_ABI _Float16 __trunctfhf2(fp_t a) { return __truncXfYf2__(a); }
+ 
+ #endif
+diff --git a/lib/builtins/trunctfsf2.c b/lib/builtins/trunctfsf2.c
+index 0261b1e..f08f064 100644
+--- a/lib/builtins/trunctfsf2.c
++++ b/lib/builtins/trunctfsf2.c
+@@ -14,6 +14,6 @@
+ #define DST_SINGLE
+ #include "fp_trunc_impl.inc"
+ 
+-COMPILER_RT_ABI float __trunctfsf2(long double a) { return __truncXfYf2__(a); }
++COMPILER_RT_ABI float __trunctfsf2(fp_t a) { return __truncXfYf2__(a); }
+ 
+ #endif
+diff --git a/lib/builtins/x86_64/sfp.c b/lib/builtins/x86_64/sfp.c
+new file mode 100644
+index 0000000..1df8d92
+--- /dev/null
++++ b/lib/builtins/x86_64/sfp.c
+@@ -0,0 +1,76 @@
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++
++#define QUAD_PRECISION
++#include "../fp_lib.h"
++
++#if defined(CRT_HAS_128BIT) && defined(CRT_LDBL_128BIT)
++#define SRC_QUAD
++#define DST_DOUBLE
++#include "../fp_trunc_impl.inc"
++
++#define FP_EX_INVALID 0x01
++#define FP_EX_DENORM 0x02
++#define FP_EX_DIVZERO 0x04
++#define FP_EX_OVERFLOW 0x08
++#define FP_EX_UNDERFLOW 0x10
++#define FP_EX_INEXACT 0x20
++
++#define __math_force_eval_div(x, y)                                            \
++  do {                                                                         \
++    __asm__("" : "+t"(x));                                                     \
++    __asm__("" : : "f"(x / y));                                                \
++  } while (0)
++
++struct fenv {
++  unsigned short int __control_word;
++  unsigned short int __unused1;
++  unsigned short int __status_word;
++  unsigned short int __unused2;
++  unsigned short int __tags;
++  unsigned short int __unused3;
++  unsigned int __eip;
++  unsigned short int __cs_selector;
++  unsigned int __opcode : 11;
++  unsigned int __unused4 : 5;
++  unsigned int __data_offset;
++  unsigned short int __data_selector;
++  unsigned short int __unused5;
++};
++
++COMPILER_RT_ABI void __sfp_handle_exceptions(int _fex) {
++  struct fenv temp;
++
++  if (_fex & FP_EX_INVALID) {
++    float f = 0.0f;
++    __math_force_eval_div(f, f);
++  }
++  if (_fex & FP_EX_DENORM) {
++    __asm__("fnstenv\t%0" : "=m"(temp));
++    temp.__status_word |= FP_EX_DENORM;
++    __asm__("fldenv\t%0" : : "m"(temp));
++    __asm__("fwait");
++  }
++  if (_fex & FP_EX_DIVZERO) {
++    float f = 1.0f, g = 0.0f;
++    __math_force_eval_div(f, g);
++  }
++  if (_fex & FP_EX_OVERFLOW) {
++    __asm__("fnstenv\t%0" : "=m"(temp));
++    temp.__status_word |= FP_EX_OVERFLOW;
++    __asm__("fldenv\t%0" : : "m"(temp));
++    __asm__("fwait");
++  }
++  if (_fex & FP_EX_UNDERFLOW) {
++    __asm__("fnstenv\t%0" : "=m"(temp));
++    temp.__status_word |= FP_EX_UNDERFLOW;
++    __asm__("fldenv\t%0" : : "m"(temp));
++    __asm__("fwait");
++  }
++  if (_fex & FP_EX_INEXACT) {
++    float f = 1.0f, g = 3.0f;
++    __math_force_eval_div(f, g);
++  }
++}
++#endif
+-- 
+2.34.1
+
