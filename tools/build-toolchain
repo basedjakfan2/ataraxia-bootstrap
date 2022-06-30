@@ -3,7 +3,8 @@
 set -e
 
 # replace
-linux_version="5.18.6"
+linux_version="5.18.8"
+glibc_version="2.35"
 pkgconf_version="1.6.3"
 libz_version="1.2.8.2015.12.26"
 bzip_version="1.0.8"
@@ -244,16 +245,19 @@ parse_architecture() {
 			export xtarget="x86_64-linux-gnu"
 			export llvmTarget="X86"
 			export llvmArch="x86_64"
+			export kArch="x86"
 			;;
 		arm64)
 			export xtarget="aarch64-linux-gnu"
 			export llvmTarget="AArch64"
 			export llvmArch="aarch64"
+			export kArch="arm64"
 			;;
 		riscv64)
 			export xtarget="riscv64-linux-gnu"
 			export llvmTarget="RISCV"
 			export llvmArch="riscv64"
+			export kArch="riscv"
 			;;
 		*)
 			die 'The OS architecture is not specified or supported by Ataraxia GNU/Linux'
@@ -1200,6 +1204,94 @@ build_llvm() {
 
 }
 
+build_kernel_headers() {
+	download_file https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-$linux_version.tar.xz
+	unpack_file linux-$linux_version.tar.xz
+
+	cd "$sources/linux-$linux_version"
+	emake mrproper
+	emake ARCH=$kArch headers
+
+	install -dm755 "$sysroot"/usr/include
+	find usr/include -name '.*' -delete
+	cp -r usr/include/* "$sysroot"/usr/include/
+	rm \
+		"$sysroot"/usr/include/Makefile \
+		"$sysroot"/usr/include/headers_check.pl
+}
+
+build_glibc_headers() {
+	download_file https://ftp.gnu.org/gnu/glibc/glibc-$glibc_version.tar.xz
+	unpack_file glibc-$glibc_version.tar.xz
+
+	cd "$sources/glibc-$glibc_version"
+	epatch glibc/0001-fix-build-using-clang.patch
+
+	mkdir headers-build
+	cd headers-build
+
+	echo "libc_cv_forced_unwind=yes" > config.cache
+	echo "libc_cv_c_cleanup=yes" >> config.cache
+
+	BUILD_CC="$HOSTCC" \
+	CC="$xtarget-clang" \
+	CXX="$xtarget-clang++" \
+	../configure \
+		--build=$xhost \
+		--host=$xtarget \
+		--prefix=/usr \
+		--cache-file=config.cache \
+		--without-cvs \
+		--without-gd \
+		--without-selinux \
+		--enable-kernel=3.2 \
+		--disable-multiarch \
+		--disable-profile
+
+	emake install-headers \
+		BUILD_CC="$HOSTCXX" \
+		install_root="$sysroot" \
+		cross-compiling=yes
+
+	touch "$sysroot"/usr/include/gnu/stubs.h
+	touch "$sysroot"/usr/include/bits/stdio_lim.h
+}
+
+build_compiler_rt() {
+	local extraOpts
+
+	if test $barch = "x86_64"; then
+		extraOpts="-DCAN_TARGET_x86_64=ON -DCAN_TARGET_i386=OFF"
+	fi
+
+	cd "$sources"
+	cmake \
+		-S "$sources/llvm-project-$llvm_version.src/compiler-rt" \
+		-B build-compiler-rt -G Ninja \
+		-DCMAKE_INSTALL_PREFIX="$tools" \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_ASM_COMPILER="$tools/bin/$xtarget-clang" \
+		-DCMAKE_C_COMPILER="$tools/bin/$xtarget-clang" \
+		-DCMAKE_CXX_COMPILER="$tools/bin/$xtarget-clang++" \
+		-DCMAKE_AR="$tools/bin/$xtarget-ar" \
+		-DCMAKE_NM="$tools/bin/$xtarget-nm" \
+		-DCMAKE_RANLIB="$tools/bin/$xtarget-ranlib" \
+		-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+		-DCOMPILER_RT_INSTALL_PATH="$tools/lib/clang/$llvm_version" \
+		-DCOMPILER_RT_BUILD_BUILTINS=ON \
+		-DCOMPILER_RT_BUILD_CRT=ON \
+		-DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
+		-DCOMPILER_RT_BUILD_MEMPROF=OFF \
+		-DCOMPILER_RT_BUILD_ORC=OFF \
+		-DCOMPILER_RT_BUILD_PROFILE=OFF \
+		-DCOMPILER_RT_BUILD_SANITIZERS=OFF \
+		-DCOMPILER_RT_BUILD_XRAY=OFF \
+		-DCOMPILER_RT_CRT_USE_EH_FRAME_REGISTRY=ON \
+		$extraOpts -Wno-dev
+	eninja -C build-compiler-rt
+	eninja -C build-compiler-rt install
+}
+
 main() {
 	export caching="no"
 
@@ -1252,6 +1344,9 @@ main() {
 	build_meson
 	build_cmake
 	build_llvm
+	build_kernel_headers
+	build_glibc_headers
+	build_compiler_rt
 
 	msg "Toolchain build done."
 }
