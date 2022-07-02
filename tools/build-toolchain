@@ -5,6 +5,8 @@ set -e
 # replace
 linux_version="5.18.8"
 glibc_version="2.35"
+gawk_version="5.1.1" # GNU and GPLv3
+gsed_version="4.7" # GNU and GPLv3
 pkgconf_version="1.6.3"
 libz_version="1.2.8.2015.12.26"
 bzip_version="1.0.8"
@@ -15,8 +17,8 @@ libarchive_version="3.6.1"
 perl_version="5.36.0"
 texinfo_version="6.8" # GNU and GPLv3
 gettext_version="0.21" # GNU and GPLv3
-byacc_version="20220128"
 m4_version="1.4.19" # GNU and GPLv3
+bison_version="3.8.2" # GNU and GPLv3
 autoconf_version="2.71" # GNU
 automake_version="1.16.5" # GNU
 flex_version="2.6.4"
@@ -247,10 +249,9 @@ parse_architecture() {
 			export llvmArch="x86_64"
 			export kArch="x86"
 			export baseCflags="-march=x86-64-v2 -O2 -g0 -fomit-frame-pointer -pipe"
-			export securityCflags="-D_FORTIFY_SOURCE=2 -fsanitize=safe-stack -fsanitize-cfi-cross-dso -fstack-protector-strong -fstack-clash-protection -fcf-protection=full -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -mretpoline --param=ssp-buffer-size=4"
+			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -flto -fsanitize-cfi-cross-dso -fsanitize=safe-stack -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow -fstack-clash-protection -fcf-protection=full -mretpoline --param=ssp-buffer-size=4"
 			export targetCflags="$baseCflags $securityCflags"
 			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
-			export libSuffix="lib64"
 			;;
 		arm64)
 			export xtarget="aarch64-linux-gnu"
@@ -258,10 +259,9 @@ parse_architecture() {
 			export llvmArch="aarch64"
 			export kArch="arm64"
 			export baseCflags="-march=armv8.2a -mtune=neoverse-n1 -mcpu=neoverse-n1 -O2 -g0 -fomit-frame-pointer -pipe"
-			export securityCflags="-D_FORTIFY_SOURCE=2 -ffixed-x18 -fsanitize=safe-stack -fsanitize=shadow-call-stack -fsanitize-cfi-cross-dso -fstack-protector-strong -fstack-clash-protection -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang --param=ssp-buffer-size=4"
+			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -ffixed-x18 -flto -fsanitize-cfi-cross-dso -fsanitize=safe-stack -fsanitize=shadow-call-stack -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow -fstack-clash-protection --param=ssp-buffer-size=4"
 			export targetCflags="$baseCflags $securityCflags"
 			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
-			export libSuffix="lib64"
 			;;
 		riscv64)
 			export xtarget="riscv64-linux-gnu"
@@ -269,10 +269,9 @@ parse_architecture() {
 			export llvmArch="riscv64"
 			export kArch="riscv"
 			export baseCflags="-O2 -g0 -fomit-frame-pointer -pipe"
-			export securityCflags="-D_FORTIFY_SOURCE=2 -fstack-protector-strong -fstack-clash-protection -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang --param=ssp-buffer-size=4"
+			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow -fstack-clash-protection --param=ssp-buffer-size=4"
 			export targetCflags="$baseCflags $securityCflags"
 			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
-			export libSuffix="lib64"
 			;;
 		*)
 			die 'The OS architecture is not specified or supported by Ataraxia GNU/Linux'
@@ -345,6 +344,26 @@ make_environment() {
 			sed -i "s/compiler/$i/g" "$tools"/bin/cached-$i
 		done
 	fi
+}
+
+build_gawk() {
+	download_file https://ftp.gnu.org/gnu/gawk/gawk-$gawk_version.tar.xz
+	unpack_file gawk-$gawk_version.tar.xz
+
+	cd "$sources/gawk-$gawk_version"
+	econfigure
+	emake
+	emake install
+}
+
+build_gsed() {
+	download_file https://ftp.gnu.org/gnu/sed/sed-$sed_version.tar.xz
+	unpack_file sed-$sed_version.tar.xz
+
+	cd "$sources/sed-$sed_version"
+	econfigure
+	emake
+	emake install
 }
 
 build_pkgconf() {
@@ -489,21 +508,21 @@ build_gettext() {
 	emake install
 }
 
-build_byacc() {
-	download_file https://invisible-island.net/archives/byacc/byacc-$byacc_version.tgz
-	unpack_file byacc-$byacc_version.tgz
-
-	cd "$sources/byacc-$byacc_version"
-	econfigure
-	emake
-	emake install
-}
-
 build_m4() {
 	download_file https://ftp.gnu.org/gnu/m4/m4-$m4_version.tar.xz
 	unpack_file m4-$m4_version.tar.xz
 
 	cd "$sources/m4-$m4_version"
+	econfigure
+	emake
+	emake install
+}
+
+build_bison() {
+	download_file https://ftp.gnu.org/gnu/bison/bison-$bison_version.tar.xz
+	unpack_file bison-$bison_version.tar.xz
+
+	cd "$sources/bison-$bison_version"
 	econfigure
 	emake
 	emake install
@@ -1152,7 +1171,6 @@ build_llvm() {
 	cd "$sources/llvm-project-$llvm_version.src/clang"
 	epatch clang/0001-add-support-for-Ataraxia-GNU-Linux.patch
 	epatch clang/0002-disable-relaxation-on-RISC-V.patch
-	epatch clang/0003-use-rv-imac-abi-for-RISC-V-by-default.patch
 
 	cd "$sources/llvm-project-$llvm_version.src/lld"
 	epatch lld/0001-use-SHA1-by-default.patch
@@ -1362,8 +1380,8 @@ build_glibc() {
 	mkdir glibc-build
 	cd glibc-build
 
-	echo "slibdir=/usr/$libSuffix" >> configparms
-	echo "rtlddir=/usr/$libSuffix" >> configparms
+	echo "slibdir=/usr/lib" >> configparms
+	echo "rtlddir=/usr/lib" >> configparms
 	echo "sbindir=/usr/bin" >> configparms
 	echo "rootsbindir=/usr/bin" >> configparms
 
@@ -1376,7 +1394,7 @@ build_glibc() {
 		--build=$xhost \
 		--host=$xtarget \
 		--prefix=/usr \
-		--libdir=/usr/$libSuffix \
+		--libdir=/usr/lib \
 		--libexecdir=/usr/libexec \
 		--without-cvs \
 		--without-gd \
@@ -1410,6 +1428,8 @@ main() {
 	make_environment
 
 	msg "Started toolchain build."
+	build_gawk
+	build_gsed
 	build_pkgconf
 	build_expat
 	build_libz
@@ -1421,8 +1441,8 @@ main() {
 	build_perl
 	build_texinfo
 	build_gettext
-	build_byacc
 	build_m4
+	build_bison
 	build_autoconf
 	build_automake
 	build_slibtoolize
