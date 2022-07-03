@@ -1408,14 +1408,13 @@ build_glibc() {
 	emake install_root="$sysroot" install
 }
 
-build_llvm_runtime() {
+build_libunwind() {
 	cd "$sources"
 	CFLAGS="$baseCflags" \
 	CXXFLAGS="$baseCflags" \
-	LDFLAGS="$targetLdflags" \
 	cmake \
 		-S "$sources/llvm-project-$llvm_version.src/runtimes" \
-		-B build-runtimes -G Ninja \
+		-B build-libunwind -G Ninja \
 		-DCMAKE_CROSSCOMPILING=ON \
 		-DCMAKE_INSTALL_PREFIX="/usr" \
 		-DCMAKE_BUILD_TYPE=MinSizeRel \
@@ -1426,18 +1425,7 @@ build_llvm_runtime() {
 		-DCMAKE_NM="$tools/bin/$xtarget-nm" \
 		-DCMAKE_RANLIB="$tools/bin/$xtarget-ranlib" \
 		-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
-		-DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
-		-DLIBCXX_CXX_ABI="libcxxabi" \
-		-DLIBCXX_ENABLE_ASSERTIONS=ON \
-		-DLIBCXX_ENABLE_SHARED=ON \
-		-DLIBCXX_ENABLE_STATIC=ON \
-		-DLIBCXX_HAS_ATOMIC_LIB=OFF \
-		-DLIBCXX_USE_COMPILER_RT=ON \
-		-DLIBCXXABI_ENABLE_ASSERTIONS=ON \
-		-DLIBCXXABI_ENABLE_SHARED=ON \
-		-DLIBCXXABI_ENABLE_STATIC=ON \
-		-DLIBCXXABI_USE_COMPILER_RT=ON \
-		-DLIBCXXABI_USE_LLVM_UNWINDER=ON \
+		-DLLVM_ENABLE_libunwind="libunwind" \
 		-DLIBUNWIND_ENABLE_ASSERTIONS=ON \
 		-DLIBUNWIND_ENABLE_CROSS_UNWINDING=ON \
 		-DLIBUNWIND_ENABLE_SHARED=ON \
@@ -1445,8 +1433,43 @@ build_llvm_runtime() {
 		-DLIBUNWIND_INSTALL_HEADERS=ON \
 		-DLIBUNWIND_USE_COMPILER_RT=ON \
 		-Wno-dev
-	eninja -C build-runtimes
-	DESTDIR="$sysroot" eninja -C build-runtimes install
+	eninja -C build-libunwind
+	DESTDIR="$sysroot" eninja -C build-libunwind install
+}
+
+build_libcxx() {
+	cd "$sources"
+	CFLAGS="$targetCflags" \
+	CXXFLAGS="$targetCflags" \
+	LDFLAGS="$targetLdflags" \
+	cmake \
+		-S "$sources/llvm-project-$llvm_version.src/runtimes" \
+		-B build-libcxx -G Ninja \
+		-DCMAKE_CROSSCOMPILING=ON \
+		-DCMAKE_INSTALL_PREFIX="/usr" \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_ASM_COMPILER="$tools/bin/$TARGET_CC" \
+		-DCMAKE_C_COMPILER="$tools/bin/$TARGET_CC" \
+		-DCMAKE_CXX_COMPILER="$tools/bin/$TARGET_CXX" \
+		-DCMAKE_AR="$tools/bin/$xtarget-ar" \
+		-DCMAKE_NM="$tools/bin/$xtarget-nm" \
+		-DCMAKE_RANLIB="$tools/bin/$xtarget-ranlib" \
+		-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+		-DLLVM_ENABLE_libcxx="libcxx;libcxxabi" \
+		-DLIBCXX_CXX_ABI="libcxxabi" \
+		-DLIBCXX_ENABLE_ASSERTIONS=ON \
+		-DLIBCXX_ENABLE_SHARED=OFF \
+		-DLIBCXX_ENABLE_STATIC=ON \
+		-DLIBCXX_HAS_ATOMIC_LIB=OFF \
+		-DLIBCXX_USE_COMPILER_RT=ON \
+		-DLIBCXXABI_ENABLE_ASSERTIONS=ON \
+		-DLIBCXXABI_ENABLE_SHARED=OFF \
+		-DLIBCXXABI_ENABLE_STATIC=ON \
+		-DLIBCXXABI_USE_COMPILER_RT=ON \
+		-DLIBCXXABI_USE_LLVM_UNWINDER=ON \
+		-Wno-dev
+	eninja -C build-libcxx
+#	DESTDIR="$sysroot" eninja -C build-libcxx install
 }
 
 build_rust() {
@@ -1586,7 +1609,8 @@ main() {
 		build_compiler_rt_sanitizers
 	fi
 	build_glibc
-	build_llvm_runtime
+	build_libunwind
+#	build_libcxx
 #	build_rust
 
 	msg "Toolchain build done."
