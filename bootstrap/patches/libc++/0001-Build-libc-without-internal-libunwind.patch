@@ -1,0 +1,31 @@
+From 3e98847e7b5158bf322c5cb5e3313a240bd049ca Mon Sep 17 00:00:00 2001
+From: Taylor Berlioz <nagakamira@gmail.com>
+Date: Sun, 3 Jul 2022 12:22:09 -0700
+Subject: [PATCH] Build libc++ without internal libunwind
+
+Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
+---
+ src/CMakeLists.txt | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 12dcdf9..62e1cce 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -300,13 +300,6 @@ if (LIBCXX_ENABLE_STATIC)
+   cxx_add_common_build_flags(cxx_static)
+   cxx_set_common_defines(cxx_static)
+ 
+-  if (LIBCXXABI_USE_LLVM_UNWINDER)
+-    # If we intend to use the just-built unwinder, add a dependency so that it
+-    # gets built, even if we technically aren't going to link it in at this
+-    # stage.
+-    add_dependencies(cxx_static unwind)
+-  endif()
+-
+   if (LIBCXX_HERMETIC_STATIC_LIBRARY)
+     # If the hermetic library doesn't define the operator new/delete functions
+     # then its code shouldn't declare them with hidden visibility.  They might
+-- 
+2.34.1
+

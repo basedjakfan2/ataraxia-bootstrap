@@ -261,18 +261,7 @@ parse_architecture() {
 			export llvmArch="aarch64"
 			export kArch="arm64"
 			export baseCflags="-march=armv8.2a -mtune=neoverse-n1 -mcpu=neoverse-n1 -O2 -g0 -fomit-frame-pointer -pipe"
-			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -ffixed-x18 -flto -fsanitize-cfi-cross-dso -fsanitize=safe-stack -fsanitize=shadow-call-stack -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow --param=ssp-buffer-size=4"
-			export targetCflags="$baseCflags $securityCflags"
-			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
-			;;
-		sparc64)
-			export xtarget="sparc64-linux-gnu"
-			export rtarget="sparc64-unknown-linux-gnu"
-			export llvmTarget="Sparc"
-			export llvmArch="sparc64"
-			export kArch="sparc"
-			export baseCflags="-mcpu=ultrasparc -O2 -g0 -fomit-frame-pointer -pipe"
-			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -flto -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow --param=ssp-buffer-size=4"
+			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -fsanitize-cfi-cross-dso -fsanitize=safe-stack -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow --param=ssp-buffer-size=4"
 			export targetCflags="$baseCflags $securityCflags"
 			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
 			;;
@@ -1172,6 +1161,9 @@ build_llvm() {
 	cd "$sources/llvm-project-$llvm_version.src/lld"
 	epatch lld/0001-use-SHA1-by-default.patch
 
+	cd "$sources/llvm-project-$llvm_version.src/libcxx"
+	epatch libc++/0001-Build-libc-without-internal-libunwind.patch
+
 	cd "$sources/llvm-project-$llvm_version.src"
 	ecmake -S llvm -B llvm-build -G Ninja \
 		-DCMAKE_INSTALL_PREFIX="$tools" \
@@ -1281,11 +1273,11 @@ build_glibc_headers() {
 		--without-cvs \
 		--without-gd \
 		--without-selinux \
-		--enable-kernel=3.2 \
+		--enable-kernel=4.19.0 \
 		--disable-profile
 
 	emake install-headers \
-		BUILD_CC="$HOSTCXX" \
+		BUILD_CC="$HOSTCC" \
 		install_root="$sysroot" \
 		cross-compiling=yes
 
@@ -1397,7 +1389,7 @@ build_glibc() {
 		--without-gd \
 		--without-selinux \
 		--enable-bind-now \
-		--enable-kernel=3.2 \
+		--enable-kernel=4.19.0 \
 		--enable-stack-protector=strong \
 		--enable-tunables \
 		--disable-build-nscd \
@@ -1410,8 +1402,9 @@ build_glibc() {
 
 build_libunwind() {
 	cd "$sources"
-	CFLAGS="$baseCflags" \
-	CXXFLAGS="$baseCflags" \
+	CFLAGS="$(echo $targetCflags | sed -e 's/ -fsanitize=safe-stack//g') -fPIC" \
+	CXXFLAGS="$(echo $targetCflags | sed -e 's/ -fsanitize=safe-stack//g') -fPIC" \
+	LDFLAGS="$targetLdflags" \
 	cmake \
 		-S "$sources/llvm-project-$llvm_version.src/runtimes" \
 		-B build-libunwind -G Ninja \
@@ -1425,7 +1418,7 @@ build_libunwind() {
 		-DCMAKE_NM="$tools/bin/$xtarget-nm" \
 		-DCMAKE_RANLIB="$tools/bin/$xtarget-ranlib" \
 		-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
-		-DLLVM_ENABLE_libunwind="libunwind" \
+		-DLLVM_ENABLE_RUNTIMES="libunwind" \
 		-DLIBUNWIND_ENABLE_ASSERTIONS=ON \
 		-DLIBUNWIND_ENABLE_CROSS_UNWINDING=ON \
 		-DLIBUNWIND_ENABLE_SHARED=ON \
@@ -1439,8 +1432,8 @@ build_libunwind() {
 
 build_libcxx() {
 	cd "$sources"
-	CFLAGS="$targetCflags" \
-	CXXFLAGS="$targetCflags" \
+	CFLAGS="$(echo $targetCflags | sed -e 's/ -fsanitize=safe-stack//g') -fPIC" \
+	CXXFLAGS="$(echo $targetCflags | sed -e 's/ -fsanitize=safe-stack//g') -fPIC" \
 	LDFLAGS="$targetLdflags" \
 	cmake \
 		-S "$sources/llvm-project-$llvm_version.src/runtimes" \
@@ -1455,21 +1448,23 @@ build_libcxx() {
 		-DCMAKE_NM="$tools/bin/$xtarget-nm" \
 		-DCMAKE_RANLIB="$tools/bin/$xtarget-ranlib" \
 		-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
-		-DLLVM_ENABLE_libcxx="libcxx;libcxxabi" \
+		-DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" \
 		-DLIBCXX_CXX_ABI="libcxxabi" \
 		-DLIBCXX_ENABLE_ASSERTIONS=ON \
-		-DLIBCXX_ENABLE_SHARED=OFF \
+		-DLIBCXX_ENABLE_SHARED=ON \
 		-DLIBCXX_ENABLE_STATIC=ON \
+		-DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=ON \
 		-DLIBCXX_HAS_ATOMIC_LIB=OFF \
 		-DLIBCXX_USE_COMPILER_RT=ON \
 		-DLIBCXXABI_ENABLE_ASSERTIONS=ON \
 		-DLIBCXXABI_ENABLE_SHARED=OFF \
 		-DLIBCXXABI_ENABLE_STATIC=ON \
+		-DLIBCXXABI_INSTALL_LIBRARY=OFF \
 		-DLIBCXXABI_USE_COMPILER_RT=ON \
 		-DLIBCXXABI_USE_LLVM_UNWINDER=ON \
 		-Wno-dev
 	eninja -C build-libcxx
-#	DESTDIR="$sysroot" eninja -C build-libcxx install
+	DESTDIR="$sysroot" eninja -C build-libcxx install
 }
 
 build_rust() {
@@ -1516,6 +1511,7 @@ build_rust() {
 		[rust]
 		codegen-units = 0
 		codegen-units-std = 0
+		codegen-tests = false
 		debuginfo-level = 0
 		channel = "nightly"
 		rpath = true
@@ -1610,8 +1606,8 @@ main() {
 	fi
 	build_glibc
 	build_libunwind
-#	build_libcxx
-#	build_rust
+	build_libcxx
+	build_rust
 
 	msg "Toolchain build done."
 }
