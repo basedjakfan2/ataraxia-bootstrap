@@ -1670,54 +1670,6 @@ build_rpm() {
 	emake install
 }
 
-build_grub_flavor() {
-	TARGET_CC="$TARGET_CC" \
-	TARGET_NM="$xtarget-nm" \
-	TARGET_OBJCOPY="$xtarget-objcopy" \
-	TARGET_RANLIB="$xtarget-ranlib" \
-	TARGET_STRIP="$xtarget-strip" \
-	econfigure \
-		--host=$xhost \
-		--build=$xhost \
-		--target=$xtarget \
-		--disable-nls \
-		--disable-werror \
-		"$@"
-	emake
-	emake install
-	emake clean
-}
-
-build_grub() {
-	local flavors f
-
-	case "$barch" in
-		x86_64) flavors="efi" ;;
-	esac
-
-	download_file https://ftp.gnu.org/gnu/grub/grub-$grub_version.tar.xz
-	unpack_file grub-$grub_version.tar.xz
-
-	cd "$sources/grub-$grub_version"
-	epatch grub/0001-fix-non-PIE-compiler-specs.patch
-	epatch grub/0002-truncate-unneeded-data-from-binaries.patch
-	epatch grub/0003-add-vendor-version-string.patch
-
-	autoreconf -vif
-
-	for f in $flavors; do
-		case "$f" in
-		bios)		build_grub_flavor $f --with-platform=pc;;
-		efi)		build_grub_flavor $f --with-platform=efi --disable-efiemu;;
-		xenhost)	build_grub_flavor $f --with-platform=xen;;
-		xenhost_pvh)	build_grub_flavor $f --with-platform=xen_pvh --target=i386;;
-		*)		build_grub_flavor $f --with-platform=$f;;
-		esac
-	done
-
-	install -m644 "$files"/grub/unicode.pf2 "$tools"/share/grub/unicode.pf2
-}
-
 main() {
 	export caching="no"
 
