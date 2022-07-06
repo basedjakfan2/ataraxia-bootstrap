@@ -1,0 +1,81 @@
+From 5c87794d7cfd4adf509c1b1c5aecf61c47466737 Mon Sep 17 00:00:00 2001
+From: Taylor Berlioz <nagakamira@gmail.com>
+Date: Wed, 6 Jul 2022 09:56:07 -0700
+Subject: [PATCH] add Mirai Linux targets
+
+Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
+---
+ .../rustc_target/src/spec/aarch64_mirai_linux_gnu.rs   | 10 ++++++++++
+ compiler/rustc_target/src/spec/mod.rs                  |  3 +++
+ .../rustc_target/src/spec/riscv64gc_mirai_linux_gnu.rs | 10 ++++++++++
+ .../rustc_target/src/spec/x86_64_mirai_linux_gnu.rs    | 10 ++++++++++
+ 4 files changed, 33 insertions(+)
+ create mode 100644 compiler/rustc_target/src/spec/aarch64_mirai_linux_gnu.rs
+ create mode 100644 compiler/rustc_target/src/spec/riscv64gc_mirai_linux_gnu.rs
+ create mode 100644 compiler/rustc_target/src/spec/x86_64_mirai_linux_gnu.rs
+
+diff --git a/compiler/rustc_target/src/spec/aarch64_mirai_linux_gnu.rs b/compiler/rustc_target/src/spec/aarch64_mirai_linux_gnu.rs
+new file mode 100644
+index 000000000..4117c171d
+--- /dev/null
++++ b/compiler/rustc_target/src/spec/aarch64_mirai_linux_gnu.rs
+@@ -0,0 +1,10 @@
++use crate::spec::Target;
++
++pub fn target() -> Target {
++    let mut base = super::aarch64_unknown_linux_gnu::target();
++
++    base.llvm_target = "aarch64-mirai-linux".into();
++    base.options.vendor = "mirai".into();
++
++    base
++}
+diff --git a/compiler/rustc_target/src/spec/mod.rs b/compiler/rustc_target/src/spec/mod.rs
+index 832eeec3e..93c1f9c5d 100644
+--- a/compiler/rustc_target/src/spec/mod.rs
++++ b/compiler/rustc_target/src/spec/mod.rs
+@@ -809,6 +809,9 @@ macro_rules! supported_targets {
+ }
+ 
+ supported_targets! {
++    ("aarch64-mirai-linux-gnu", aarch64_mirai_linux_gnu),
++    ("x86_64-mirai-linux-gnu", x86_64_mirai_linux_gnu),
++    ("riscv64gc-mirai-linux-gnu", riscv64gc_mirai_linux_gnu),
+     ("x86_64-unknown-linux-gnu", x86_64_unknown_linux_gnu),
+     ("x86_64-unknown-linux-gnux32", x86_64_unknown_linux_gnux32),
+     ("i686-unknown-linux-gnu", i686_unknown_linux_gnu),
+diff --git a/compiler/rustc_target/src/spec/riscv64gc_mirai_linux_gnu.rs b/compiler/rustc_target/src/spec/riscv64gc_mirai_linux_gnu.rs
+new file mode 100644
+index 000000000..be72917b4
+--- /dev/null
++++ b/compiler/rustc_target/src/spec/riscv64gc_mirai_linux_gnu.rs
+@@ -0,0 +1,10 @@
++use crate::spec::Target;
++
++pub fn target() -> Target {
++    let mut base = super::riscv64gc_unknown_linux_gnu::target();
++
++    base.llvm_target = "riscv64-mirai-linux".into();
++    base.options.vendor = "mirai".into();
++
++    base
++}
+diff --git a/compiler/rustc_target/src/spec/x86_64_mirai_linux_gnu.rs b/compiler/rustc_target/src/spec/x86_64_mirai_linux_gnu.rs
+new file mode 100644
+index 000000000..350132780
+--- /dev/null
++++ b/compiler/rustc_target/src/spec/x86_64_mirai_linux_gnu.rs
+@@ -0,0 +1,10 @@
++use crate::spec::Target;
++
++pub fn target() -> Target {
++    let mut base = super::x86_64_unknown_linux_gnu::target();
++
++    base.llvm_target = "x86_64-mirai-linux".into();
++    base.options.vendor = "mirai".into();
++
++    base
++}
+-- 
+2.34.1
+

@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+PKG_CONFIG_LIBDIR="OS_SYSROOT/usr/lib/pkgconfig" \
+PKG_CONFIG_PATH="OS_SYSROOT/usr/lib/pkgconfig" \
+PKG_CONFIG_SYSROOT_DIR="OS_SYSROOT" \
+PKG_CONFIG_SYSTEM_INCLUDE_PATH="OS_SYSROOT/usr/include" \
+PKG_CONFIG_SYSTEM_LIBRARY_PATH="OS_SYSROOT/usr/lib" \
+exec pkgconf "$@"

@@ -1,6 +1,6 @@
-From 9b52e905bf3373cea875ff1b29526bd337d5dab6 Mon Sep 17 00:00:00 2001
+From 42c471048cb50900e05fa09a08b71de4c51cf69c Mon Sep 17 00:00:00 2001
 From: Taylor Berlioz <nagakamira@gmail.com>
-Date: Sat, 2 Jul 2022 08:23:34 -0700
+Date: Wed, 6 Jul 2022 07:02:08 -0700
 Subject: [PATCH 2/2] disable relaxation on RISC-V
 
 Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>

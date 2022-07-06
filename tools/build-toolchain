@@ -244,8 +244,8 @@ parse_architecture() {
 
 	case "$1" in
 		x86_64)
-			export xtarget="x86_64-linux-gnu"
-			export rtarget="x86_64-unknown-linux-gnu"
+			export xtarget="x86_64-mirai-linux"
+			export rtarget="x86_64-mirai-linux-gnu"
 			export llvmTarget="X86"
 			export llvmArch="x86_64"
 			export kArch="x86"
@@ -255,19 +255,19 @@ parse_architecture() {
 			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
 			;;
 		arm64)
-			export xtarget="aarch64-linux-gnu"
-			export rtarget="aarch64-unknown-linux-gnu"
+			export xtarget="aarch64-mirai-linux"
+			export rtarget="aarch64-mirai-linux-gnu"
 			export llvmTarget="AArch64"
 			export llvmArch="aarch64"
 			export kArch="arm64"
-			export baseCflags="-march=armv8.2a -mtune=neoverse-n1 -mcpu=neoverse-n1 -O2 -g0 -fomit-frame-pointer -pipe"
+			export baseCflags="-march=armv8-a+simd+fp+crypto -mtune=cortex-a72 -O2 -g0 -fomit-frame-pointer -pipe"
 			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -fsanitize-cfi-cross-dso -fsanitize=safe-stack -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow --param=ssp-buffer-size=4"
 			export targetCflags="$baseCflags $securityCflags"
 			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
 			;;
 		riscv64)
-			export xtarget="riscv64-linux-gnu"
-			export rtarget="riscv64gc-unknown-linux-gnu"
+			export xtarget="riscv64-mirai-linux"
+			export rtarget="riscv64gc-mirai-linux-gnu"
 			export llvmTarget="RISCV"
 			export llvmArch="riscv64"
 			export kArch="riscv"
@@ -386,6 +386,13 @@ build_pkgconf() {
 		--disable-shared
 	emake
 	emake install
+
+	install -m755 "$files"/common/pkgconfig-wrapper "$tools"/bin/$xtarget-pkgconf
+	install -m755 "$files"/common/pkgconfig-wrapper "$tools"/bin/$xtarget-pkg-config
+
+	sed -i "s|OS_SYSROOT|$sysroot|" \
+		"$tools"/bin/$xtarget-pkgconf \
+		"$tools"/bin/$xtarget-pkg-config
 }
 
 build_expat() {
@@ -1155,7 +1162,7 @@ build_llvm() {
 	unpack_file llvm-project-$llvm_version.src.tar.xz
 
 	cd "$sources/llvm-project-$llvm_version.src/clang"
-	epatch clang/0001-add-support-for-Ataraxia-GNU-Linux.patch
+	epatch clang/0001-add-Mirai-Linux-vendor-definitions.patch
 	epatch clang/0002-disable-relaxation-on-RISC-V.patch
 
 	cd "$sources/llvm-project-$llvm_version.src/lld"
@@ -1175,7 +1182,7 @@ build_llvm() {
 		-DCLANG_DEFAULT_RTLIB=compiler-rt \
 		-DCLANG_DEFAULT_UNWINDLIB=libunwind \
 		-DCLANG_PLUGIN_SUPPORT=ON \
-		-DCLANG_VENDOR=Ataraxia \
+		-DCLANG_VENDOR=Mirai \
 		-DGO_EXECUTABLE=GO_EXECUTABLE-NOTFOUND \
 		-DLLVM_APPEND_VC_REV=OFF \
 		-DLLVM_ENABLE_LIBEDIT=OFF \
@@ -1327,6 +1334,12 @@ build_compiler_rt_builtins() {
 }
 
 build_compiler_rt_sanitizers() {
+	local extraOpts
+
+	if test $barch = "x86_64"; then
+		extraOpts="-DCAN_TARGET_x86_64=ON -DCAN_TARGET_i386=OFF"
+	fi
+
 	cd "$sources"
 	CFLAGS="$baseCflags" \
 	CXXFLAGS="$baseCflags" \
@@ -1352,7 +1365,7 @@ build_compiler_rt_sanitizers() {
 		-DCOMPILER_RT_BUILD_PROFILE=OFF \
 		-DCOMPILER_RT_BUILD_SANITIZERS=ON \
 		-DCOMPILER_RT_BUILD_XRAY=OFF \
-		-Wno-dev
+		$extraOpts -Wno-dev
 	eninja -C build-sanitizers cfi safestack
 
 	install -m644 -t "$tools"/lib/clang/$llvm_version/lib/linux build-sanitizers/lib/linux/*.a
@@ -1468,12 +1481,31 @@ build_libcxx() {
 }
 
 build_rust() {
+	local rcc rcxx rlinker rar rranlib
+
 	download_file https://static.rust-lang.org/dist/rustc-$rust_version-src.tar.xz
 	unpack_file rustc-$rust_version-src.tar.xz
 
-	unset CC CXX
+	# Self-hosting on Mirai Linux
+	if test "$rtarget" = "$(rustc -vV | sed -n 's|host: ||p')"; then
+		rcc="$(command -v $CC)"
+		rcxx="$(command -v $CXX)"
+		rlinker="$(command -v $CC)"
+		rar="$(command -v llvm-ar)"
+		rranlib="$(command -v llvm-ranlib)"
+	else
+		rcc="$tools/bin/$xtarget-clang"
+		rcxx="$tools/bin/$xtarget-clang++"
+		rlinker="$tools/bin/$xtarget-clang"
+		rar="$tools/bin/$xtarget-ar"
+		rranlib="$tools/bin/$xtarget-ranlib"
+	fi
+
+	unset CC CXX HOSTCC HOSTCXX
 
 	cd "$sources/rustc-$rust_version-src"
+	epatch rust/0001-add-Mirai-Linux-targets.patch
+
 	cat > config.toml <<-EOF
 		changelog-seen = 2
 
@@ -1522,11 +1554,11 @@ build_rust() {
 		compression-formats = ["gz"]
 
 		[target.$rtarget]
-		cc = "$tools/bin/$xtarget-clang"
-		cxx = "$tools/bin/$xtarget-clang"
-		linker = "$tools/bin/$xtarget-clang"
-		ar = "$tools/bin/$xtarget-ar"
-		ranlib = "$tools/bin/$xtarget-ranlib"
+		cc = "$rcc"
+		cxx = "$rcxx"
+		linker = "$rcc"
+		ar = "$rar"
+		ranlib = "$rranlib"
 	EOF
 
 	if test "$using_caching" = "1"; then
