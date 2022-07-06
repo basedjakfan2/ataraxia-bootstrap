@@ -1665,7 +1665,8 @@ build_rpm() {
 		--enable-zstd \
 		--disable-bdb-ro \
 		--disable-ndb \
-		--disable-python
+		--disable-python \
+		--disable-shared
 	emake
 	emake install
 }
