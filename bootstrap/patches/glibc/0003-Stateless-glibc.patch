@@ -1,11 +1,12 @@
-From 87a8a8cd7a828ce27906c1979603893740d5c8c5 Mon Sep 17 00:00:00 2001
+From 47d497e76ab84833558ebb8a85a8a5d33e26e292 Mon Sep 17 00:00:00 2001
 From: Taylor Berlioz <nagakamira@gmail.com>
-Date: Sun, 24 Jul 2022 16:19:10 -0700
+Date: Sun, 24 Jul 2022 16:24:30 -0700
 Subject: [PATCH 3/3] Stateless glibc
 
 Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
 ---
  elf/cache.c                  | 12 ++++++++++++
+ elf/ldconfig.c               |  2 +-
  locale/loadarchive.c         |  2 +-
  locale/programs/locale.c     |  2 +-
  locale/programs/locarchive.c |  2 +-
@@ -14,7 +15,7 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  nss/nss_files/files-XXX.c    |  4 ++++
  resolv/res_hconf.c           |  2 ++
  sysdeps/generic/dl-cache.h   |  2 +-
- 9 files changed, 29 insertions(+), 6 deletions(-)
+ 10 files changed, 30 insertions(+), 7 deletions(-)
 
 diff --git a/elf/cache.c b/elf/cache.c
 index dbf4c83a..5ba2bedc 100644
@@ -39,6 +40,19 @@ index dbf4c83a..5ba2bedc 100644
    /* Create file.  */
    int fd = open (temp_name, O_CREAT|O_WRONLY|O_TRUNC|O_NOFOLLOW,
  		 S_IRUSR|S_IWUSR);
+diff --git a/elf/ldconfig.c b/elf/ldconfig.c
+index 57bb95eb..5f9fac58 100644
+--- a/elf/ldconfig.c
++++ b/elf/ldconfig.c
+@@ -57,7 +57,7 @@
+ #define TLS_HWCAP_BIT 63
+ 
+ #ifndef LD_SO_CONF
+-# define LD_SO_CONF SYSCONFDIR "/ld.so.conf"
++# define LD_SO_CONF "/usr/share/factory/etc/ld.so.conf"
+ #endif
+ 
+ /* Get libc version number.  */
 diff --git a/locale/loadarchive.c b/locale/loadarchive.c
 index e7c797bc..ffa0f168 100644
 --- a/locale/loadarchive.c
