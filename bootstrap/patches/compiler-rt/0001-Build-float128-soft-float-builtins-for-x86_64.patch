@@ -1,34 +1,19 @@
-From e0f188b067e38b7ee5bffcbc133e219ef25189a7 Mon Sep 17 00:00:00 2001
+From dce9cfb6e612941757d0006ad21cd2c8d954cdb1 Mon Sep 17 00:00:00 2001
 From: Taylor Berlioz <nagakamira@gmail.com>
-Date: Thu, 30 Jun 2022 16:00:41 -0700
+Date: Sun, 24 Jul 2022 13:24:02 -0700
 Subject: [PATCH] Build float128 soft float builtins for x86_64
 
 Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
 ---
- lib/builtins/CMakeLists.txt |  1 +
- lib/builtins/extenddftf2.c  |  4 ++
- lib/builtins/extendhftf2.c  |  4 +-
- lib/builtins/fp_lib.h       |  7 +++-
- lib/builtins/powitf2.c      |  2 +-
- lib/builtins/trunctfdf2.c   |  3 +-
- lib/builtins/trunctfhf2.c   |  4 +-
- lib/builtins/trunctfsf2.c   |  2 +-
- lib/builtins/x86_64/sfp.c   | 76 +++++++++++++++++++++++++++++++++++++
- 9 files changed, 93 insertions(+), 10 deletions(-)
- create mode 100644 lib/builtins/x86_64/sfp.c
+ lib/builtins/extenddftf2.c | 4 ++++
+ lib/builtins/extendhftf2.c | 4 +---
+ lib/builtins/fp_lib.h      | 7 ++++++-
+ lib/builtins/powitf2.c     | 2 +-
+ lib/builtins/trunctfdf2.c  | 3 ++-
+ lib/builtins/trunctfhf2.c  | 4 +---
+ lib/builtins/trunctfsf2.c  | 2 +-
+ 7 files changed, 16 insertions(+), 10 deletions(-)
 
-diff --git a/lib/builtins/CMakeLists.txt b/lib/builtins/CMakeLists.txt
-index ea5ad9c..a2c086b 100644
---- a/lib/builtins/CMakeLists.txt
-+++ b/lib/builtins/CMakeLists.txt
-@@ -296,6 +296,7 @@ if (NOT MSVC)
-     x86_64/floatdisf.c
-     x86_64/floatundidf.S
-     x86_64/floatundisf.S
-+    x86_64/sfp.c
-   )
- 
-   if (NOT ANDROID)
 diff --git a/lib/builtins/extenddftf2.c b/lib/builtins/extenddftf2.c
 index ddf470e..5b035b5 100644
 --- a/lib/builtins/extenddftf2.c
@@ -131,88 +116,6 @@ index 0261b1e..f08f064 100644
 +COMPILER_RT_ABI float __trunctfsf2(fp_t a) { return __truncXfYf2__(a); }
  
  #endif
-diff --git a/lib/builtins/x86_64/sfp.c b/lib/builtins/x86_64/sfp.c
-new file mode 100644
-index 0000000..1df8d92
---- /dev/null
-+++ b/lib/builtins/x86_64/sfp.c
-@@ -0,0 +1,76 @@
-+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-+// See https://llvm.org/LICENSE.txt for license information.
-+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-+
-+#define QUAD_PRECISION
-+#include "../fp_lib.h"
-+
-+#if defined(CRT_HAS_128BIT) && defined(CRT_LDBL_128BIT)
-+#define SRC_QUAD
-+#define DST_DOUBLE
-+#include "../fp_trunc_impl.inc"
-+
-+#define FP_EX_INVALID 0x01
-+#define FP_EX_DENORM 0x02
-+#define FP_EX_DIVZERO 0x04
-+#define FP_EX_OVERFLOW 0x08
-+#define FP_EX_UNDERFLOW 0x10
-+#define FP_EX_INEXACT 0x20
-+
-+#define __math_force_eval_div(x, y)                                            \
-+  do {                                                                         \
-+    __asm__("" : "+t"(x));                                                     \
-+    __asm__("" : : "f"(x / y));                                                \
-+  } while (0)
-+
-+struct fenv {
-+  unsigned short int __control_word;
-+  unsigned short int __unused1;
-+  unsigned short int __status_word;
-+  unsigned short int __unused2;
-+  unsigned short int __tags;
-+  unsigned short int __unused3;
-+  unsigned int __eip;
-+  unsigned short int __cs_selector;
-+  unsigned int __opcode : 11;
-+  unsigned int __unused4 : 5;
-+  unsigned int __data_offset;
-+  unsigned short int __data_selector;
-+  unsigned short int __unused5;
-+};
-+
-+COMPILER_RT_ABI void __sfp_handle_exceptions(int _fex) {
-+  struct fenv temp;
-+
-+  if (_fex & FP_EX_INVALID) {
-+    float f = 0.0f;
-+    __math_force_eval_div(f, f);
-+  }
-+  if (_fex & FP_EX_DENORM) {
-+    __asm__("fnstenv\t%0" : "=m"(temp));
-+    temp.__status_word |= FP_EX_DENORM;
-+    __asm__("fldenv\t%0" : : "m"(temp));
-+    __asm__("fwait");
-+  }
-+  if (_fex & FP_EX_DIVZERO) {
-+    float f = 1.0f, g = 0.0f;
-+    __math_force_eval_div(f, g);
-+  }
-+  if (_fex & FP_EX_OVERFLOW) {
-+    __asm__("fnstenv\t%0" : "=m"(temp));
-+    temp.__status_word |= FP_EX_OVERFLOW;
-+    __asm__("fldenv\t%0" : : "m"(temp));
-+    __asm__("fwait");
-+  }
-+  if (_fex & FP_EX_UNDERFLOW) {
-+    __asm__("fnstenv\t%0" : "=m"(temp));
-+    temp.__status_word |= FP_EX_UNDERFLOW;
-+    __asm__("fldenv\t%0" : : "m"(temp));
-+    __asm__("fwait");
-+  }
-+  if (_fex & FP_EX_INEXACT) {
-+    float f = 1.0f, g = 3.0f;
-+    __math_force_eval_div(f, g);
-+  }
-+}
-+#endif
 -- 
 2.34.1
 

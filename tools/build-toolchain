@@ -223,7 +223,7 @@ parse_architecture() {
 			export llvmArch="x86_64"
 			export kArch="x86"
 			export baseCflags="-march=x86-64-v2 -O2 -g0 -fomit-frame-pointer -pipe"
-			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -flto -fsanitize-cfi-cross-dso -fsanitize=safe-stack -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow -fstack-clash-protection -fcf-protection=full -mretpoline --param=ssp-buffer-size=4"
+			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -flto -fvisibility=hidden -fsanitize=cfi -fsanitize-cfi-cross-dso -fsanitize=safe-stack -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow -fstack-clash-protection -fcf-protection=full -mretpoline --param=ssp-buffer-size=4"
 			export targetCflags="$baseCflags $securityCflags"
 			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
 			;;
@@ -234,7 +234,7 @@ parse_architecture() {
 			export llvmArch="aarch64"
 			export kArch="arm64"
 			export baseCflags="-march=armv8-a+simd+fp+crypto -mtune=cortex-a72 -O2 -g0 -fomit-frame-pointer -pipe"
-			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -fsanitize-cfi-cross-dso -fsanitize=safe-stack -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow --param=ssp-buffer-size=4"
+			export securityCflags="-Wp,-D_FORTIFY_SOURCE=3 -Werror=format-security -fstack-protector-strong -flto -fvisibility=hidden -fsanitize=cfi -fsanitize-cfi-cross-dso -fsanitize=safe-stack -ftrivial-auto-var-init=zero -enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang -fsanitize=signed-integer-overflow,unsigned-integer-overflow -fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow --param=ssp-buffer-size=4"
 			export targetCflags="$baseCflags $securityCflags"
 			export targetLdflags="-Wl,-z,relro,-z,now -Wl,--as-needed -Wl,--gc-sections -Wl,-z,noexecstack -s"
 			;;
@@ -1230,6 +1230,7 @@ build_glibc_headers() {
 	cd "$sources/glibc-$glibc_version"
 	epatch glibc/0001-Adopt-building-glibc-using-LLVM-clang.patch
 	epatch glibc/0002-Deny-LD_PRELOAD-of-files-in-NOEXEC-mount.patch
+	epatch glibc/0003-Stateless-glibc.patch
 
 	mkdir headers-build
 	cd headers-build
@@ -1345,6 +1346,7 @@ build_glibc() {
 	local extraOpts
 
 	case "$barch" in
+		x86_64) extraOpts="--enable-cet" ;;
 		arm64) extraOpts="--enable-memory-tagging" ;;
 	esac
 

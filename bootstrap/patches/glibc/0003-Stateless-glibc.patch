@@ -1,0 +1,170 @@
+From 87a8a8cd7a828ce27906c1979603893740d5c8c5 Mon Sep 17 00:00:00 2001
+From: Taylor Berlioz <nagakamira@gmail.com>
+Date: Sun, 24 Jul 2022 16:19:10 -0700
+Subject: [PATCH 3/3] Stateless glibc
+
+Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
+---
+ elf/cache.c                  | 12 ++++++++++++
+ locale/loadarchive.c         |  2 +-
+ locale/programs/locale.c     |  2 +-
+ locale/programs/locarchive.c |  2 +-
+ misc/getusershell.c          |  3 +++
+ nss/nss_database.c           |  6 ++++--
+ nss/nss_files/files-XXX.c    |  4 ++++
+ resolv/res_hconf.c           |  2 ++
+ sysdeps/generic/dl-cache.h   |  2 +-
+ 9 files changed, 29 insertions(+), 6 deletions(-)
+
+diff --git a/elf/cache.c b/elf/cache.c
+index dbf4c83a..5ba2bedc 100644
+--- a/elf/cache.c
++++ b/elf/cache.c
+@@ -718,6 +718,18 @@ save_cache (const char *cache_name)
+   char *temp_name = xmalloc (strlen (cache_name) + 2);
+   sprintf (temp_name, "%s~", cache_name);
+ 
++  /* Check that directory exists and create if needed.  */
++  char *dir = strdupa (cache_name);
++  dir = dirname (dir);
++
++  struct stat64 st;
++  if (stat64 (dir, &st) < 0)
++    {
++      if (mkdir (dir, 0700) < 0)
++	error (EXIT_FAILURE, errno, _("Can't create temporary cache dir %s"),
++	       dir);
++    }
++
+   /* Create file.  */
+   int fd = open (temp_name, O_CREAT|O_WRONLY|O_TRUNC|O_NOFOLLOW,
+ 		 S_IRUSR|S_IWUSR);
+diff --git a/locale/loadarchive.c b/locale/loadarchive.c
+index e7c797bc..ffa0f168 100644
+--- a/locale/loadarchive.c
++++ b/locale/loadarchive.c
+@@ -42,7 +42,7 @@
+ 
+ 
+ /* Name of the locale archive file.  */
+-static const char archfname[] = COMPLOCALEDIR "/locale-archive";
++static const char archfname[] = "/var/cache/locale/locale-archive";
+ 
+ /* Size of initial mapping window, optimal if large enough to
+    cover the header plus the initial locale.  */
+diff --git a/locale/programs/locale.c b/locale/programs/locale.c
+index 1b51b50d..8abeed0c 100644
+--- a/locale/programs/locale.c
++++ b/locale/programs/locale.c
+@@ -45,7 +45,7 @@
+ #include "../locarchive.h"
+ #include <programs/xmalloc.h>
+ 
+-#define ARCHIVE_NAME COMPLOCALEDIR "/locale-archive"
++#define ARCHIVE_NAME "/var/cache/locale/locale-archive"
+ 
+ /* If set print the name of the category.  */
+ static int show_category_name;
+diff --git a/locale/programs/locarchive.c b/locale/programs/locarchive.c
+index 45408c26..94bc2905 100644
+--- a/locale/programs/locarchive.c
++++ b/locale/programs/locarchive.c
+@@ -56,7 +56,7 @@
+ 
+ extern const char *output_prefix;
+ 
+-#define ARCHIVE_NAME COMPLOCALEDIR "/locale-archive"
++#define ARCHIVE_NAME "/var/cache/locale/locale-archive"
+ 
+ static const char *locnames[] =
+   {
+diff --git a/misc/getusershell.c b/misc/getusershell.c
+index 11f5aa83..78b0bf79 100644
+--- a/misc/getusershell.c
++++ b/misc/getusershell.c
+@@ -104,7 +104,10 @@ initshells (void)
+ 	shells = NULL;
+ 	free(strings);
+ 	strings = NULL;
++	/* Attempt /etc/shells, otherwise fall back to /usr/share/factory/etc/shells */
+ 	if ((fp = fopen(_PATH_SHELLS, "rce")) == NULL)
++		fp = fopen("/usr/share/factory/etc/shells", "rce");
++	if (fp == NULL)
+ 		goto init_okshells_noclose;
+ 	if (__fstat64(fileno(fp), &statb) == -1) {
+ 	init_okshells:
+diff --git a/nss/nss_database.c b/nss/nss_database.c
+index d56c5b79..c0a0e8f4 100644
+--- a/nss/nss_database.c
++++ b/nss/nss_database.c
+@@ -304,6 +304,8 @@ nss_database_reload (struct nss_database_data *staging,
+                      struct file_change_detection *initial)
+ {
+   FILE *fp = fopen (_PATH_NSSWITCH_CONF, "rce");
++  if (fp == NULL)
++	  fp = fopen ("/usr/share/factory/etc/nsswitch.conf", "rce");
+   if (fp == NULL)
+     switch (errno)
+       {
+@@ -406,8 +408,8 @@ nss_database_check_reload_and_get (struct nss_database_state *local,
+       return true;
+     }
+ 
+-  struct file_change_detection initial;
+-  if (!__file_change_detection_for_path (&initial, _PATH_NSSWITCH_CONF))
++  struct file_change_detection initial, initial2;
++  if (!__file_change_detection_for_path (&initial, _PATH_NSSWITCH_CONF) && !__file_change_detection_for_path (&initial2, "/usr/share/factory/etc/nsswitch.conf"))
+     return false;
+ 
+   __libc_lock_lock (local->lock);
+diff --git a/nss/nss_files/files-XXX.c b/nss/nss_files/files-XXX.c
+index 656cbc35..16715e6c 100644
+--- a/nss/nss_files/files-XXX.c
++++ b/nss/nss_files/files-XXX.c
+@@ -40,6 +40,7 @@
+ #define ENTNAME_r	CONCAT(ENTNAME,_r)
+ 
+ #define DATAFILE	"/etc/" DATABASE
++#define ALTDATAFILE	"/usr/share/factory/etc/" DATABASE
+ 
+ #ifdef NEED_H_ERRNO
+ # include <netdb.h>
+@@ -75,6 +76,9 @@ internal_setent (FILE **stream)
+     {
+       *stream = __nss_files_fopen (DATAFILE);
+ 
++      if (*stream == NULL)
++        *stream = __nss_files_fopen (ALTDATAFILE);
++
+       if (*stream == NULL)
+ 	status = errno == EAGAIN ? NSS_STATUS_TRYAGAIN : NSS_STATUS_UNAVAIL;
+     }
+diff --git a/resolv/res_hconf.c b/resolv/res_hconf.c
+index dd09a2a2..f97dd6d0 100644
+--- a/resolv/res_hconf.c
++++ b/resolv/res_hconf.c
+@@ -277,6 +277,8 @@ do_init (void)
+   if (hconf_name == NULL)
+     hconf_name = _PATH_HOSTCONF;
+ 
++  arg_bool (ENV_MULTI, 1, "on", HCONF_FLAG_MULTI);
++
+   fp = fopen (hconf_name, "rce");
+   if (fp)
+     {
+diff --git a/sysdeps/generic/dl-cache.h b/sysdeps/generic/dl-cache.h
+index df385dca..5b03ba0d 100644
+--- a/sysdeps/generic/dl-cache.h
++++ b/sysdeps/generic/dl-cache.h
+@@ -35,7 +35,7 @@
+ #endif
+ 
+ #ifndef LD_SO_CACHE
+-# define LD_SO_CACHE SYSCONFDIR "/ld.so.cache"
++# define "/var/cache/ldconfig/ld.so.cache"
+ #endif
+ 
+ #ifndef add_system_dir
+-- 
+2.34.1
+

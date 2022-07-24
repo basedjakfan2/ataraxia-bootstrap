@@ -1,7 +1,7 @@
-From b04e86fdf347a4cb0576f32ae981d378f5e4e8ee Mon Sep 17 00:00:00 2001
+From 2744b40ac3e18a3c43f4ce3469e30612bdf83b81 Mon Sep 17 00:00:00 2001
 From: Taylor Berlioz <nagakamira@gmail.com>
-Date: Thu, 30 Jun 2022 14:04:00 -0700
-Subject: [PATCH 2/2] Deny LD_PRELOAD of files in NOEXEC mount
+Date: Sun, 24 Jul 2022 16:08:52 -0700
+Subject: [PATCH 2/3] Deny LD_PRELOAD of files in NOEXEC mount
 
 This commit hardens against a security bug in dl-load.c
 

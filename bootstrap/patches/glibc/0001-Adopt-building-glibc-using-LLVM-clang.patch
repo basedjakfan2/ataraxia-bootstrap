@@ -1,7 +1,7 @@
-From 0bcc3a20ff630d7cb628919c132e145e3af81ea0 Mon Sep 17 00:00:00 2001
+From 800eaca4ebc40223dea67a3aec0d353955fb7db9 Mon Sep 17 00:00:00 2001
 From: Taylor Berlioz <nagakamira@gmail.com>
-Date: Thu, 30 Jun 2022 14:03:20 -0700
-Subject: [PATCH 1/2] Adopt building glibc using LLVM/clang
+Date: Sun, 24 Jul 2022 16:08:18 -0700
+Subject: [PATCH 1/3] Adopt building glibc using LLVM/clang
 
 Huge cherry pick from azanella/clang branch, many rejections have been fixed
 Many warnings have been fixed as well
@@ -443,9 +443,9 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  sysdeps/powerpc/powerpc64/power6/memset.S     |    1 +
  sysdeps/powerpc/powerpc64/power7/memset.S     |    1 +
  sysdeps/powerpc/powerpc64/power8/memset.S     |    1 +
+ sysdeps/riscv/Makefile                        |    6 +-
  sysdeps/riscv/dl-tls.h                        |    2 +-
  sysdeps/riscv/nptl/tls.h                      |    2 +-
- sysdeps/riscv/start.S                         |    1 +
  sysdeps/s390/nptl/tls.h                       |    2 +-
  sysdeps/sh/memset.S                           |    1 +
  sysdeps/sh/nptl/tls.h                         |    2 +-
@@ -484,10 +484,10 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  sysdeps/wordsize-64/Makefile                  |    5 +
  sysdeps/wordsize-64/strtol.c                  |    3 +-
  sysdeps/x86/bits/floatn.h                     |   15 +-
- sysdeps/x86/configure                         |  231 +-
- sysdeps/x86/configure.ac                      |   22 +-
+ sysdeps/x86/configure                         |   46 +-
+ sysdeps/x86/configure.ac                      |   28 +-
  sysdeps/x86/fpu/Makefile                      |    9 +-
- sysdeps/x86/fpu/sfp-machine.h                 |   15 +-
+ sysdeps/x86/fpu/sfp-machine.h                 |   83 +-
  sysdeps/x86/nptl/pthreaddef.h                 |    8 +-
  sysdeps/x86/sys/platform/x86.h                |    4 +-
  sysdeps/x86/tst-ldbl-nonnormal-printf.c       |    2 +-
@@ -529,7 +529,7 @@ Signed-off-by: Taylor Berlioz <nagakamira@gmail.com>
  wcsmbs/wchar.h                                |  229 +-
  wcsmbs/wcsmbs-tst1.c                          |    2 +-
  wctype/Makefile                               |    2 +
- 510 files changed, 5045 insertions(+), 3946 deletions(-)
+ 510 files changed, 4929 insertions(+), 3956 deletions(-)
  delete mode 100644 argp/bits/argp-ldbl.h
  delete mode 100644 catgets/config.h
  rename stdlib/bits/monetary-ldbl.h => elf/dl-symbol-hacks.h (64%)
@@ -16686,6 +16686,22 @@ index 9ecb6f30..e60f19ec 100644
  
  /* Copied from bzero.S to prevent the linker from inserting a stub
     between bzero and memset.  */
+diff --git a/sysdeps/riscv/Makefile b/sysdeps/riscv/Makefile
+index 8fb10b16..f5b0269d 100644
+--- a/sysdeps/riscv/Makefile
++++ b/sysdeps/riscv/Makefile
+@@ -7,7 +7,9 @@ endif
+ ASFLAGS-.os += $(pic-ccflag)
+ 
+ ifeq (no,$(riscv-r-align))
+-ASFLAGS-.os += -Wa,-mno-relax
+-ASFLAGS-.o += -Wa,-mno-relax
++ASFLAGS-.os += -mno-relax
++ASFLAGS-.o += -mno-relax
+ sysdep-CFLAGS += -mno-relax
+ endif
++
++CFLAGS-feupdateenv.c += $(config-cflags-wno-ignored-attributes)
 diff --git a/sysdeps/riscv/dl-tls.h b/sysdeps/riscv/dl-tls.h
 index e5768347..f430b20b 100644
 --- a/sysdeps/riscv/dl-tls.h
@@ -16709,18 +16725,6 @@ index 4e586f34..ab0df368 100644
  
  /* Return the address of the dtv for the current thread.  */
  # define THREAD_DTV() \
-diff --git a/sysdeps/riscv/start.S b/sysdeps/riscv/start.S
-index 87d4d637..e3f2fc9a 100644
---- a/sysdeps/riscv/start.S
-+++ b/sysdeps/riscv/start.S
-@@ -47,6 +47,7 @@ ENTRY (ENTRY_POINT)
- 	   .cfi_label to force starting the FDE.  */
- 	.cfi_label .Ldummy
- 	cfi_undefined (ra)
-+
- 	call  load_gp
- 	mv    a5, a0  /* rtld_fini.  */
- 	/* main may be in a shared library.  */
 diff --git a/sysdeps/s390/nptl/tls.h b/sysdeps/s390/nptl/tls.h
 index ff210ffe..5d300789 100644
 --- a/sysdeps/s390/nptl/tls.h
@@ -17597,10 +17601,10 @@ index 34a6fdc8..91ac3784 100644
  #  endif
  
 diff --git a/sysdeps/x86/configure b/sysdeps/x86/configure
-index 7bdbfdc6..7850147f 100644
+index 7bdbfdc6..93929ddc 100644
 --- a/sysdeps/x86/configure
 +++ b/sysdeps/x86/configure
-@@ -33,12 +33,12 @@ $as_echo "$libc_cv_x86_cet_available" >&6; }
+@@ -33,30 +33,30 @@ $as_echo "$libc_cv_x86_cet_available" >&6; }
  fi
  if test $enable_cet != no; then
    # Check if assembler supports CET.
@@ -17613,11 +17617,14 @@ index 7bdbfdc6..7850147f 100644
    $as_echo_n "(cached) " >&6
  else
 -  cat > conftest.s <<EOF
-+  cat > conftest.S <<EOF
- 	incsspd %ecx
+-	incsspd %ecx
++  cat > conftest.c <<EOF
++	__asm__("incsspd %ecx");
  EOF
- 		 if { ac_try='${CC-cc} -c $CFLAGS conftest.s -o conftest.o 1>&5'
-@@ -47,15 +47,15 @@ EOF
+-		 if { ac_try='${CC-cc} -c $CFLAGS conftest.s -o conftest.o 1>&5'
++		 if { ac_try='${CC-cc} -c $CFLAGS conftest.c -o conftest.o 1>&5'
+   { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
+   (eval $ac_try) 2>&5
    ac_status=$?
    $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
    test $ac_status = 0; }; }; then
@@ -17632,207 +17639,18 @@ index 7bdbfdc6..7850147f 100644
 -{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_x86_cet_as" >&5
 -$as_echo "$libc_cv_x86_cet_as" >&6; }
 -  if test $libc_cv_x86_cet_as = no; then
+-    as_fn_error $? "$AS doesn't support CET" "$LINENO" 5
 +{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_x86_cet_cc" >&5
 +$as_echo "$libc_cv_x86_cet_cc" >&6; }
 +  if test $libc_cv_x86_cet_cc = no; then
-     as_fn_error $? "$AS doesn't support CET" "$LINENO" 5
++    as_fn_error $? "$CC doesn't support CET" "$LINENO" 5
    fi
  fi
-@@ -189,3 +189,216 @@ $as_echo "$libc_cv_have_x86_movbe" >&6; }
+ if test $enable_cet = yes; then
+@@ -189,3 +189,25 @@ $as_echo "$libc_cv_have_x86_movbe" >&6; }
  fi
  config_vars="$config_vars
  enable-x86-isa-level = $libc_cv_include_x86_isa_level"
-+# This file is generated from configure.ac by Autoconf.  DO NOT EDIT!
-+ # Local configure fragment for sysdeps/x86.
-+
-+if test $enable_cet != no; then
-+  # Check if CET can be enabled.
-+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether CET can be enabled" >&5
-+$as_echo_n "checking whether CET can be enabled... " >&6; }
-+if ${libc_cv_x86_cet_available+:} false; then :
-+  $as_echo_n "(cached) " >&6
-+else
-+  cat > conftest.c <<EOF
-+#if !defined __CET__ || __CET__ != 3
-+# error CET isn't available.
-+#endif
-+EOF
-+		 if { ac_try='${CC-cc} -c $CFLAGS -fcf-protection -include cet.h conftest.c 1>&5'
-+  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
-+  (eval $ac_try) 2>&5
-+  ac_status=$?
-+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-+  test $ac_status = 0; }; }; then
-+		   libc_cv_x86_cet_available=yes
-+		 else
-+		   libc_cv_x86_cet_available=no
-+		 fi
-+		 rm -rf conftest*
-+fi
-+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_x86_cet_available" >&5
-+$as_echo "$libc_cv_x86_cet_available" >&6; }
-+  if test $libc_cv_x86_cet_available != yes; then
-+    as_fn_error $? "$CC doesn't support CET" "$LINENO" 5
-+  fi
-+fi
-+if test $enable_cet != no; then
-+  # Check if assembler supports CET.
-+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether $CC supports CET" >&5
-+$as_echo_n "checking whether $CC supports CET... " >&6; }
-+if ${libc_cv_x86_cet_cc+:} false; then :
-+  $as_echo_n "(cached) " >&6
-+else
-+  cat > conftest.S <<EOF
-+	incsspd %ecx
-+EOF
-+		 if { ac_try='${CC-cc} -c $CFLAGS conftest.s -o conftest.o 1>&5'
-+  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
-+  (eval $ac_try) 2>&5
-+  ac_status=$?
-+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-+  test $ac_status = 0; }; }; then
-+		   libc_cv_x86_cet_cc=yes
-+		 else
-+		   libc_cv_x86_cet_cc=no
-+		 fi
-+		 rm -rf conftest*
-+fi
-+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_x86_cet_cc" >&5
-+$as_echo "$libc_cv_x86_cet_cc" >&6; }
-+  if test $libc_cv_x86_cet_cc = no; then
-+    as_fn_error $? "$AS doesn't support CET" "$LINENO" 5
-+  fi
-+fi
-+if test $enable_cet = yes; then
-+  $as_echo "#define DEFAULT_DL_X86_CET_CONTROL cet_elf_property" >>confdefs.h
-+
-+elif test $enable_cet = permissive; then
-+  $as_echo "#define DEFAULT_DL_X86_CET_CONTROL cet_permissive" >>confdefs.h
-+
-+fi
-+config_vars="$config_vars
-+enable-cet = $enable_cet"
-+
-+# Check if linker supports x86 ISA level.
-+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for linker x86 ISA level support" >&5
-+$as_echo_n "checking for linker x86 ISA level support... " >&6; }
-+if ${libc_cv_include_x86_isa_level+:} false; then :
-+  $as_echo_n "(cached) " >&6
-+else
-+  cat > conftest1.S <<EOF
-+#ifdef __LP64__
-+# define P2ALIGN 3
-+#else
-+# define P2ALIGN 2
-+#endif
-+	.section ".note.gnu.property", "a"
-+	.p2align P2ALIGN
-+	.long 1f - 0f		/* name length.  */
-+	.long 4f - 1f		/* data length.  */
-+	/* NT_GNU_PROPERTY_TYPE_0 */
-+	.long 5			/* note type.  */
-+0:
-+	.asciz "GNU"		/* vendor name.  */
-+1:
-+	.p2align P2ALIGN
-+	/* GNU_PROPERTY_X86_ISA_1_NEEDED */
-+	.long 0xc0008002	/* pr_type.  */
-+	.long 3f - 2f		/* pr_datasz.  */
-+2:
-+	.long 0x1
-+3:
-+	.p2align P2ALIGN
-+4:
-+EOF
-+cat > conftest2.S <<EOF
-+#ifdef __LP64__
-+# define P2ALIGN 3
-+#else
-+# define P2ALIGN 2
-+#endif
-+	.section ".note.gnu.property", "a"
-+	.p2align P2ALIGN
-+	.long 1f - 0f		/* name length.  */
-+	.long 4f - 1f		/* data length.  */
-+	/* NT_GNU_PROPERTY_TYPE_0 */
-+	.long 5			/* note type.  */
-+0:
-+	.asciz "GNU"		/* vendor name.  */
-+1:
-+	.p2align P2ALIGN
-+	/* GNU_PROPERTY_X86_ISA_1_NEEDED */
-+	.long 0xc0008002	/* pr_type.  */
-+	.long 3f - 2f		/* pr_datasz.  */
-+2:
-+	.long 0x2
-+3:
-+	.p2align P2ALIGN
-+4:
-+EOF
-+libc_cv_include_x86_isa_level=no
-+if { ac_try='${CC-cc} $CFLAGS $CPPFLAGS -nostartfiles -nostdlib -r -o conftest conftest1.S conftest2.S'
-+  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
-+  (eval $ac_try) 2>&5
-+  ac_status=$?
-+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-+  test $ac_status = 0; }; }; then
-+  count=`LC_ALL=C $READELF -n conftest | grep NT_GNU_PROPERTY_TYPE_0 | wc -l`
-+  if test "$count" = 1; then
-+    libc_cv_include_x86_isa_level=yes
-+  fi
-+fi
-+rm -f conftest*
-+fi
-+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_include_x86_isa_level" >&5
-+$as_echo "$libc_cv_include_x86_isa_level" >&6; }
-+if test $libc_cv_include_x86_isa_level = yes; then
-+  $as_echo "#define INCLUDE_X86_ISA_LEVEL 1" >>confdefs.h
-+
-+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for LAHF/SAHF instruction support" >&5
-+$as_echo_n "checking for LAHF/SAHF instruction support... " >&6; }
-+if ${libc_cv_have_x86_lahf_sahf+:} false; then :
-+  $as_echo_n "(cached) " >&6
-+else
-+      libc_cv_have_x86_lahf_sahf=no
-+    if { ac_try='${CC-cc} $CFLAGS $CPPFLAGS -fverbose-asm -S -o - -x c /dev/null'
-+  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
-+  (eval $ac_try) 2>&5
-+  ac_status=$?
-+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-+  test $ac_status = 0; }; } | grep -qE '(-msahf\b|-march=x86-64-v)'; then
-+      libc_cv_have_x86_lahf_sahf=yes
-+    fi
-+fi
-+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_have_x86_lahf_sahf" >&5
-+$as_echo "$libc_cv_have_x86_lahf_sahf" >&6; }
-+  if test $libc_cv_have_x86_lahf_sahf = yes; then
-+    $as_echo "#define HAVE_X86_LAHF_SAHF 1" >>confdefs.h
-+
-+  fi
-+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for MOVBE instruction support" >&5
-+$as_echo_n "checking for MOVBE instruction support... " >&6; }
-+if ${libc_cv_have_x86_movbe+:} false; then :
-+  $as_echo_n "(cached) " >&6
-+else
-+      libc_cv_have_x86_movbe=no
-+    if { ac_try='${CC-cc} $CFLAGS $CPPFLAGS -fverbose-asm -S -o - -x c /dev/null'
-+  { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_try\""; } >&5
-+  (eval $ac_try) 2>&5
-+  ac_status=$?
-+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-+  test $ac_status = 0; }; } | grep -qE '(-mmovbe\b|-march=x86-64-v([3-9]|[1-9][0-9]))'; then
-+      libc_cv_have_x86_movbe=yes
-+    fi
-+fi
-+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $libc_cv_have_x86_movbe" >&5
-+$as_echo "$libc_cv_have_x86_movbe" >&6; }
-+  if test $libc_cv_have_x86_movbe = yes; then
-+    $as_echo "#define HAVE_X86_MOVBE 1" >>confdefs.h
-+
-+  fi
-+fi
-+config_vars="$config_vars
-+enable-x86-isa-level = $libc_cv_include_x86_isa_level"
 +
 +{ $as_echo "$as_me:${as_lineno-$LINENO}: checking if compiler supports -mpfmath=387" >&5
 +$as_echo_n "checking if compiler supports -mpfmath=387... " >&6; }
@@ -17856,23 +17674,25 @@ index 7bdbfdc6..7850147f 100644
 +config_vars="$config_vars
 +config-cflags-mfpath-387 = $libc_cv_cc_mfpmath_387"
 diff --git a/sysdeps/x86/configure.ac b/sysdeps/x86/configure.ac
-index 10d5c2e0..d2986cd0 100644
+index 10d5c2e0..25da3b45 100644
 --- a/sysdeps/x86/configure.ac
 +++ b/sysdeps/x86/configure.ac
-@@ -22,18 +22,18 @@ EOF
+@@ -22,19 +22,19 @@ EOF
  fi
  if test $enable_cet != no; then
    # Check if assembler supports CET.
 -  AC_CACHE_CHECK(whether $AS supports CET,
 -		 libc_cv_x86_cet_as, [dnl
 -cat > conftest.s <<EOF
+-	incsspd %ecx
 +  AC_CACHE_CHECK(whether $CC supports CET,
 +		 libc_cv_x86_cet_cc, [dnl
-+cat > conftest.S <<EOF
- 	incsspd %ecx
++cat > conftest.c <<EOF
++	__asm__("incsspd %ecx");
  EOF
- 		 if AC_TRY_COMMAND(${CC-cc} -c $CFLAGS conftest.s -o conftest.o 1>&AS_MESSAGE_LOG_FD); then
+-		 if AC_TRY_COMMAND(${CC-cc} -c $CFLAGS conftest.s -o conftest.o 1>&AS_MESSAGE_LOG_FD); then
 -		   libc_cv_x86_cet_as=yes
++		 if AC_TRY_COMMAND(${CC-cc} -c $CFLAGS conftest.c -o conftest.o 1>&AS_MESSAGE_LOG_FD); then
 +		   libc_cv_x86_cet_cc=yes
  		 else
 -		   libc_cv_x86_cet_as=no
@@ -17880,10 +17700,12 @@ index 10d5c2e0..d2986cd0 100644
  		 fi
  		 rm -rf conftest*])
 -  if test $libc_cv_x86_cet_as = no; then
+-    AC_MSG_ERROR([$AS doesn't support CET])
 +  if test $libc_cv_x86_cet_cc = no; then
-     AC_MSG_ERROR([$AS doesn't support CET])
++    AC_MSG_ERROR([$CC doesn't support CET])
    fi
  fi
+ if test $enable_cet = yes; then
 @@ -127,3 +127,13 @@ if test $libc_cv_include_x86_isa_level = yes; then
    fi
  fi
@@ -17921,7 +17743,7 @@ index 600e42c3..2d584dbf 100644
  				     -mfpmath=sse
  endif
 diff --git a/sysdeps/x86/fpu/sfp-machine.h b/sysdeps/x86/fpu/sfp-machine.h
-index 5892f4f5..60c4b9fc 100644
+index 5892f4f5..c1c5cdcf 100644
 --- a/sysdeps/x86/fpu/sfp-machine.h
 +++ b/sysdeps/x86/fpu/sfp-machine.h
 @@ -1,10 +1,19 @@
@@ -17955,6 +17777,85 @@ index 5892f4f5..60c4b9fc 100644
    } while (0)
  #else
  # define _FP_W_TYPE_SIZE	32
+@@ -194,12 +203,76 @@ typedef unsigned int UTItype __attribute__ ((mode (TI)));
+ 	(FP_EX_INVALID | FP_EX_DENORM | FP_EX_DIVZERO | FP_EX_OVERFLOW \
+ 	 | FP_EX_UNDERFLOW | FP_EX_INEXACT)
+ 
+-void __sfp_handle_exceptions (int);
++struct fenv
++{
++  unsigned short int __control_word;
++  unsigned short int __unused1;
++  unsigned short int __status_word;
++  unsigned short int __unused2;
++  unsigned short int __tags;
++  unsigned short int __unused3;
++  unsigned int __eip;
++  unsigned short int __cs_selector;
++  unsigned int __opcode:11;
++  unsigned int __unused4:5;
++  unsigned int __data_offset;
++  unsigned short int __data_selector;
++  unsigned short int __unused5;
++};
++
++#ifdef __SSE_MATH__
++# define __internal_math_force_eval_div(x, y) \
++  do { asm ("" : "+x" (x)); asm volatile ("" : : "x" (x / y)); } while (0)
++#else
++# define __internal_math_force_eval_div(x, y) \
++  do { asm ("" : "+t" (x)); asm volatile ("" : : "f" (x / y)); } while (0)
++#endif
++
++#define __INTERNAL_SFP_HANDLE_EXCEPTIONS(fet)		\
++  {							\
++  struct fenv temp;					\
++  if (_fex & FP_EX_INVALID)				\
++    {							\
++      float f = 0.0f;					\
++      __internal_math_force_eval_div (f, f);		\
++    }							\
++  if (_fex & FP_EX_DENORM)				\
++    {							\
++      asm volatile ("fnstenv\t%0" : "=m" (temp));	\
++      temp.__status_word |= FP_EX_DENORM;		\
++      asm volatile ("fldenv\t%0" : : "m" (temp));	\
++      asm volatile ("fwait");				\
++    }							\
++  if (_fex & FP_EX_DIVZERO)				\
++    {							\
++      float f = 1.0f, g = 0.0f;				\
++      __internal_math_force_eval_div (f, g);		\
++    }							\
++  if (_fex & FP_EX_OVERFLOW)				\
++    {							\
++      asm volatile ("fnstenv\t%0" : "=m" (temp));	\
++      temp.__status_word |= FP_EX_OVERFLOW;		\
++      asm volatile ("fldenv\t%0" : : "m" (temp));	\
++      asm volatile ("fwait");				\
++    }							\
++  if (_fex & FP_EX_UNDERFLOW)				\
++    {							\
++      asm volatile ("fnstenv\t%0" : "=m" (temp));	\
++      temp.__status_word |= FP_EX_UNDERFLOW;		\
++      asm volatile ("fldenv\t%0" : : "m" (temp));	\
++      asm volatile ("fwait");				\
++    }							\
++  if (_fex & FP_EX_INEXACT)				\
++    {							\
++      float f = 1.0f, g = 3.0f;				\
++      __internal_math_force_eval_div (f, g);		\
++    }							\
++  }
+ 
+ #define FP_HANDLE_EXCEPTIONS			\
+   do {						\
+     if (__builtin_expect (_fex, 0))		\
+-      __sfp_handle_exceptions (_fex);		\
++      __INTERNAL_SFP_HANDLE_EXCEPTIONS (_fex);	\
+   } while (0);
+ 
+ #define FP_TRAPPING_EXCEPTIONS ((~_fcw >> FP_EX_SHIFT) & FP_EX_ALL)
 diff --git a/sysdeps/x86/nptl/pthreaddef.h b/sysdeps/x86/nptl/pthreaddef.h
 index 63fdbcb2..9de2ea93 100644
 --- a/sysdeps/x86/nptl/pthreaddef.h
